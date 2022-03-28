@@ -1,16 +1,18 @@
-from transformers import TFBertModel
+from transformers import TFBertModel, BertConfig
 from tensorflow.keras import layers
 from criterion import CircleLoss
 import tensorflow as tf
+import os
 
 
 class Image(layers.Layer):
     """ 商品图片模型 """
 
-    def __init__(self, embed_dim=512, **kwargs):
+    def __init__(self, embed_dim=512, image_weights=None, **kwargs):
         super(Image, self).__init__(**kwargs)
         self.embed_dim = embed_dim
-        self.backbone = tf.keras.applications.ResNet50(include_top=False, pooling='max')
+        self.backbone = tf.keras.applications.ResNet50(
+            include_top=False, pooling='max',  weights=image_weights)
         self.ln = layers.LayerNormalization()
         self.dense = layers.Dense(self.embed_dim)
 
@@ -31,10 +33,15 @@ class Image(layers.Layer):
 class Desc(layers.Layer):
     """ 商品描述模型 """
 
-    def __init__(self, embed_dim=512, **kwargs):
+    def __init__(self, embed_dim=512, bert_path=None, **kwargs):
         super(Desc, self).__init__(**kwargs)
         self.embed_dim = embed_dim
-        self.backbone = TFBertModel.from_pretrained('bert-base-uncased')
+        bert_path = bert_path or 'bert-base-uncased'
+        if os.path.isdir(bert_path):
+            config = BertConfig.from_json_file(os.path.join(bert_path, 'config.json'))
+            self.backbone = TFBertModel(config)
+        else:
+            self.backbone = TFBertModel.from_pretrained(bert_path)
         self.dense = layers.Dense(self.embed_dim)
         self.supports_masking = True
 
@@ -97,8 +104,8 @@ class Item(tf.keras.Model):
 
     def __init__(self, attribute_size, embed_dim=512, **kwargs):
         super(Item, self).__init__(**kwargs)
-        self.image_model = Image(embed_dim)
-        self.desc_model = Desc(embed_dim)
+        self.image_model = Image(embed_dim, kwargs.pop('image_weights', None))
+        self.desc_model = Desc(embed_dim, kwargs.pop('bert_path', None))
         self.info_model = AttributeEmbedding(attribute_size, embed_dim)
         self.ln = layers.LayerNormalization()
         self.dense = layers.Dense(embed_dim)
@@ -127,7 +134,7 @@ class Items(Item):
         self.supports_masking = True
 
     def compute_mask(self, inputs, mask=None):
-        return tf.any(tf.not_equal(inputs['desc'], 0), axis=-1)
+        return tf.reduce_any(tf.not_equal(inputs['desc'], 0), axis=-1)
 
     def call(self, inputs, training=None):
         return super(Items, self).call(inputs, training=training)
@@ -188,7 +195,7 @@ def build_train_model(
     prd_mask = tf.logical_and(tf.equal(a, c), tf.greater_equal(b, d))
     prd_mask = tf.reshape(prd_mask, [batch_size, max_history_length, -1])
     prd_mask = tf.logical_not(prd_mask)  # mask history item
-    pad_mask = tf.any(tf.not_equal(inputs['desc'], 0), axis=-1)
+    pad_mask = tf.reduce_any(tf.not_equal(inputs['desc'], 0), axis=-1)
     pad_mask = tf.reshape(pad_mask, [-1])[tf.newaxis, tf.newaxis, :]
     mask = tf.logical_and(pad_mask, prd_mask)  # (batch, len, batch * len)
 
@@ -218,3 +225,8 @@ inputs = {
     'desc': layers.Input(shape=(10, 6), dtype=tf.int32),
     'info': layers.Input(shape=(10, 4), dtype=tf.int32)
 }
+
+model = build_train_model(
+    [4, 4, 4, 4], [2, 4, 5], max_history_length=5,
+    image_weights='imagenet', bert_path='bert-base-uncased')
+model.summary()
