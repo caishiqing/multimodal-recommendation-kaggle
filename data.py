@@ -1,8 +1,49 @@
 from collections import OrderedDict
-from os import O_EXCL
+from sacrebleu import DATASETS
 import tensorflow as tf
+import pandas as pd
 import numpy as np
 import random
+import os
+
+
+class RecData(object):
+    item_feature_dict = OrderedDict()
+    user_feature_dict = OrderedDict()
+
+    def __init__(self, items, users, transactions):
+        self.items = items.to_dict(orient='records') if isinstance(items, pd.DataFrame) else items
+        self.users = users.to_dict(orient='records') if isinstance(users, pd.DataFrame) else users
+        self.transactions = transactions
+
+    def load_feature_dict(self, rec_data):
+        self.item_feature_dict = rec_data.item_feature_dict
+        self.user_feature_dict = rec_data.user_feature_dict
+
+    def learn_feature_dict(self):
+        item_features = OrderedDict()
+        for item in self.items:
+            for key, val in item.items():
+                if key == 'id':
+                    continue
+                item_features.setdefault(key, set())
+                item_features[key].add(val)
+
+        user_features = OrderedDict()
+        for user in self.users:
+            for key, val in user.items():
+                if key == 'id':
+                    continue
+                user_features.setdefault(key, set())
+                user_features[key].add(val)
+
+        for key, vals in item_features.items():
+            self.item_feature_dict[key] = OrderedDict(
+                {val: i for i, val in enumerate(sorted(vals))})
+
+        for key, vals in user_features.items():
+            self.user_feature_dict[key] = OrderedDict(
+                {val: i for i, val in enumerate(sorted(vals))})
 
 
 class DataLoader(object):
@@ -11,8 +52,8 @@ class DataLoader(object):
                  items,
                  users,
                  transactions,
-                 user_feature_dict,
                  item_feature_dict,
+                 user_feature_dict,
                  tokenizer):
 
         self.config = config

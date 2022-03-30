@@ -1,3 +1,4 @@
+import numpy as np
 from transformers import TFBertModel, BertConfig
 from tensorflow.keras import layers
 from criterion import CircleLoss
@@ -147,7 +148,7 @@ class User(tf.keras.Model):
         dropout = kwargs.pop('dropout', 0.0)
         recurrent_dropout = kwargs.pop('recurrent_dropout', dropout)
         super(User, self).__init__(**kwargs)
-        self.profile_model = AttributeEmbedding(profile_size, embed_dim)
+        self.profile_model = tf.keras.Sequential([AttributeEmbedding(profile_size, embed_dim)])
         self.history_model = layers.GRU(
             embed_dim, recurrent_activation='hard_sigmoid',
             dropout=dropout, recurrent_dropout=recurrent_dropout,
@@ -165,6 +166,9 @@ class User(tf.keras.Model):
             training=training
         )
         return y, h
+
+    def infer_initial_state(self, profile, batch_size=32):
+        return self.profile_model.predict(profile, batch_size=batch_size)
 
 
 def build_train_model(
@@ -226,7 +230,17 @@ inputs = {
     'info': layers.Input(shape=(10, 4), dtype=tf.int32)
 }
 
-model = build_train_model(
-    [4, 4, 4, 4], [2, 4, 5], max_history_length=5,
-    image_weights='imagenet', bert_path='bert-base-uncased')
-model.summary()
+user_inputs = {
+    'profile': layers.Input(shape=(4,), dtype=tf.int32),
+    'items': layers.Input(shape=(10, 512))
+}
+user_model = User([4, 4, 4, 4], 512)
+y, h = user_model(user_inputs)
+user_model.summary()
+
+user_inputs = {
+    'initial_state': np.random.random((1, 512)),
+    'items': np.random.random((1, 10, 512))
+}
+y, h = user_model.predict(user_inputs)
+print(y.shape)
