@@ -24,7 +24,7 @@ class RecData(object):
         item_features = OrderedDict()
         for item in self.items:
             for key, val in item.items():
-                if key == 'id':
+                if key in ('id', 'image', 'image_path', 'desc'):
                     continue
                 item_features.setdefault(key, set())
                 item_features[key].add(val)
