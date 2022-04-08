@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 
 class UniteLoss(tf.losses.Loss):
@@ -65,3 +66,25 @@ class CircleLoss(UniteLoss):
                               tf.reduce_logsumexp(logit_p, axis=-1))
 
         return loss
+
+
+class MAP:
+    def __init__(self, top_k=10):
+        self.top_k = top_k
+
+    def __call__(self, ground_truth, prediction_score):
+        ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
+            ground_truth, maxlen=self.top_k, value=-1)
+        m = np.sum(ground_truth != -1, axis=1)
+        x = np.argsort(-prediction_score, axis=-1)[:, :self.top_k]
+
+        a = np.expand_dims(ground_truth, 2)
+        b = np.expand_dims(x, 1)
+        c = a == b
+
+        rel = np.any(c, axis=1)
+        pre = np.cumsum(rel, axis=-1, dtype=np.float32)/np.array([range(1, self.top_k+1)], np.float32)
+        ap = np.sum(pre*rel, axis=1)/m
+        map = np.mean(ap)
+
+        return map
