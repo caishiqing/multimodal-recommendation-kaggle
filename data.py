@@ -1,8 +1,8 @@
+import profile
 from transformers import BertTokenizer, BertConfig
 from collections import OrderedDict, namedtuple
 from typing import List, Union
 import tensorflow as tf
-from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import random
@@ -10,14 +10,41 @@ import json
 import os
 
 
+class DataWrapper(object):
+    def __init__(self):
+        self.user_indices = []
+        self.trans_indices = []
+        self.ground_truth = []
+
+    def append(self, user_indice: int,
+               trans_indices: List[int],
+               ground_truth_indices: List[int] = None):
+
+        self.user_indices.append(user_indice)
+        self.trans_indices.append(trans_indices)
+        if ground_truth_indices is not None:
+            self.ground_truth.append(ground_truth_indices)
+
+    def shuffle(self):
+        indices = list(range(len(self)))
+        self.user_indices = [self.user_indices[i] for i in indices]
+        self.trans_indices = [self.trans_indices[i] for i in indices]
+        if self.ground_truth:
+            self.ground_truth = [self.ground_truth[i] for i in indices]
+
+    def __len__(self):
+        return len(self.user_indices)
+
+
 class RecData(object):
     item_feature_dict = OrderedDict()
     user_feature_dict = OrderedDict()
     trans_feature_dict = OrderedDict()
-    train = list()
-    test = list()
+    train_wrapper = DataWrapper()
+    test_wrapper = DataWrapper()
     _padded = False
     _processed = False
+    _sys_fields = ('id', 'desc', 'image', 'trans', 'user', 'item')
 
     def __init__(self,
                  items: pd.DataFrame,
@@ -41,7 +68,7 @@ class RecData(object):
         self.trans['item'] = self.trans['item'].map(self.item_index_map)
         self.trans['user'] = self.trans['user'].map(self.user_index_map)
 
-        # process features
+        # load/learn features maps
         if feature_path is not None:
             self.load_feature_dict(feature_path)
         else:
@@ -55,7 +82,7 @@ class RecData(object):
     def include_desc(self):
         return 'desc' in self.items
 
-    def process_features(self, tokenizer: BertTokenizer = None):
+    def prepare_features(self, tokenizer: BertTokenizer = None):
         if not self._processed:
             self._process_item_features(tokenizer)
             self._process_user_features()
@@ -64,57 +91,96 @@ class RecData(object):
 
         self._display_feature_info()
 
-    def prepare(self, mode: str, test_users: list):
-        # Process and get train/test data from transactions
-        self.train, self.test = [], []
-        test_users = [self.user_index_map[user] for user in test_users]
-        self.users['split'] = 'train'
-        self.users['split'][test_users] = 'test'
+    def prepare_train(self, test_users: list = None):
+        if test_users is not None:
+            test_users = [self.user_index_map[user] for user in test_users]
+            test_users = set(test_users)
 
-        with tqdm(total=len(self.trans['user'].unique()), desc='Process transactions') as pbar:
-            for user, df in self.trans.groupby('user', sort=False):
-                pbar.update(1)
+        for user_idx, df in self.trans.groupby('user'):
+            trans_indices = df.index.to_list()
+            item_indices = df['item'].to_list()
+            if len(trans_indices) < self.config.max_history_length or (test_users is not None and user_idx in test_users):
+                # test sample
+                if len(trans_indices) == 1:
+                    # no transactions, only use profile
+                    self.test_wrapper.append(user_idx, [], item_indices)
+                elif len(df) < self.config.predict_length:
+                    self.test_wrapper.append(user_idx, trans_indices[:1], item_indices[1:])
+                else:
+                    self.test_wrapper.append(
+                        user_idx,
+                        trans_indices[:-self.config.predict_length],
+                        item_indices[-self.config.predict_length:]
+                    )
+            else:
+                # train sample
+                cut_offset = max(len(trans_indices)-self.config.predict_length, self.config.max_history_length)
+                self.train_wrapper.append(user_idx, trans_indices[:cut_offset])
+                if cut_offset < len(trans_indices):
+                    # cut off for test
+                    self.test_wrapper.append(user_idx, trans_indices[:cut_offset], item_indices[cut_offset:])
 
-                split = self.users['split'][user]
-                indices = df.index.to_list()
+        # shuffle train samples
+        self.train_wrapper.shuffle()
 
-                if split == 'test':
-                    ground_truth = []
-                    if mode == 'train' and len(indices) > self.config.predict_length:
-                        # Cut last transaction as target if mode is train
-                        pred_ids = indices[-self.config.predict_length:]
-                        ground_truth = df['item'][pred_ids].to_list()
-                        indices = indices[:len(indices)-self.config.predict_length]
+        print('Train samples: {}'.format(len(self.train_wrapper)))
+        print('Test samples: {}'.format(len(self.test_wrapper)))
 
-                    if mode == 'test' or ground_truth:
-                        self.test.append(
-                            {
-                                'user': user,
-                                'indices': indices[-self.config.max_history_length:],
-                                'ground_truth': ground_truth
-                            }
-                        )
+    @property
+    def train_data(self):
+        if not self._padded:
+            self.padding()
 
-                if mode == 'train' and len(indices) < max(
-                        self.config.min_train_length, self.config.max_history_length):
-                    continue
+        # Note that padding is pre using latest transactions
+        trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
+            self.train_wrapper.trans_indices, maxlen=self.config.max_history_length,
+            padding='pre', truncating='pre', value=-1
+        ).reshape([-1])
+        item_indices = self.trans.iloc[trans_indices]['item']
 
-                if mode == 'train':
-                    i, j = 0, 0
-                    while j < len(indices)-1:
-                        if len(indices) - i < 2 * self.config.max_history_length:
-                            # assert no cross history
-                            i = len(indices) - self.config.max_history_length - 1
+        profile = np.asarray(self.users.iloc[self.train_wrapper.user_indices]['profile'].to_list(), dtype=np.int32)
+        info = np.asarray(self.items.iloc[item_indices]['info'].to_list(), dtype=np.int32).reshape(
+            [len(self.train_wrapper), self.config.max_history_length, -1])
+        context = np.asarray(self.trans.iloc[trans_indices]['context'].to_list(), dtype=np.int32).reshape(
+            [len(self.train_wrapper.user_indices), self.config.max_history_length, -1])
+        desc = np.asarray(self.items.iloc[item_indices]['desc'].to_list(), dtype=np.int32).reshape(
+            [len(self.train_wrapper), self.config.max_history_length, -1]) if self.include_desc else None
+        image = np.asarray(self.items.iloc[item_indices]['image'].to_list(), dtype=np.unicode_).reshape(
+            [len(self.train_wrapper), self.config.max_history_length]) if self.include_image else None
 
-                        j = i + self.config.max_history_length
-                        while i > 0 and j >= len(indices):
-                            i -= 1
-                            j -= 1
-                        self.train.append({'user': user, 'indices': indices[i:j]})
-                        i = j
+        data = {
+            'info': info,
+            'desc': desc,
+            'image_path': image,
+            'profile': profile,
+            'context': context
+        }
+        return data
 
-        print('Train samples: {}'.format(len(self.train)))
-        print('Test samples: {}'.format(len(self.test)))
+    @property
+    def item_data(self):
+        if not self._padded:
+            self.padding()
+
+        data = {
+            'info': np.asarray(self.items['info'].to_list(), np.int32),
+            'desc': np.asarray(self.items['desc'], np.int32) if self.include_desc else None,
+            'image_path': np.asarray(self.items['image']) if self.include_image else None
+        }
+        return data
+
+    @property
+    def profile(self):
+        return np.asarray(self.users['profile'].to_list(), dtype=np.int32)
+
+    @property
+    def infer_wrapper(self):
+        wrapper = DataWrapper()
+        for user_idx, df in self.trans.groupby('user'):
+            trans_indices = df.index.to_list()
+            wrapper.append(user_idx, trans_indices)
+
+        return wrapper
 
     def padding(self):
         # pad items
@@ -137,6 +203,30 @@ class RecData(object):
         self.trans.loc[-1] = padding
 
         self._padded = True
+
+    @property
+    def info_size(self):
+        size = []
+        for feat, feat_map in self.item_feature_dict:
+            size.append(len(feat_map))
+
+        return size
+
+    @property
+    def profile_size(self):
+        size = []
+        for feat, feat_map in self.user_feature_dict:
+            size.append(len(feat_map))
+
+        return size
+
+    @property
+    def context_size(self):
+        size = []
+        for feat, feat_map in self.trans_feature_dict:
+            size.append(len(feat_map))
+
+        return size
 
     def _process_item_features(self, tokenizer: BertTokenizer = None):
         print('Process item features ...', end='')
@@ -178,21 +268,21 @@ class RecData(object):
 
     def _learn_feature_dict(self):
         for col in self.items.columns:
-            if col in ('id', 'image', 'image_path', 'desc'):
+            if col in self._sys_fields:
                 continue
             vals = set(self.items[col])
             self.item_feature_dict[col] = OrderedDict(
                 [(val, i) for i, val in enumerate(sorted(vals))])
 
         for col in self.users.columns:
-            if col in ('split', 'id'):
+            if col in self._sys_fields:
                 continue
             vals = set(self.users[col])
             self.user_feature_dict[col] = OrderedDict(
                 [(val, i) for i, val in enumerate(sorted(vals))])
 
         for col in self.trans.columns:
-            if col in ('user', 'item'):
+            if col in self._sys_fields:
                 continue
             vals = set(self.trans[col])
             self.trans_feature_dict[col] = OrderedDict(
@@ -229,89 +319,19 @@ class RecData(object):
             self.trans_feature_dict = json.load(fp)
         self._display_feature_info()
 
-
-class DataLoader(object):
-    def __init__(self, data: RecData):
-
-        self.config = data.config
-        self.data = data
-
-    def train_dataset(self, batch_size=32):
-        if not self.data._padded:
-            self.data.padding()
-
-        random.shuffle(self.data.train)
-        user_indices, trans_indices = [], []
-        for record in self.data.train:
-            user_indices.append(record['user'])
-            trans_indices.append(record['indices'])
-
-        trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-            trans_indices, maxlen=self.config.max_history_length,
-            padding='post', truncating='post', value=-1
-        ).reshape(len(self.data.train) * self.config.max_history_length)
-        item_indices = self.data.trans.iloc[trans_indices]['item']
-
-        profile = np.asarray(self.data.users.iloc[user_indices]['profile'].to_list(), dtype=np.int32)
-        info = np.asarray(self.data.items.iloc[item_indices]['info'].to_list(), dtype=np.int32).reshape(
-            [len(self.data.train), self.config.max_history_length, -1])
-        context = np.asarray(self.data.trans.iloc[trans_indices]['context'].to_list(), dtype=np.int32).reshape(
-            [len(self.data.train), self.config.max_history_length, -1])
-        desc = np.asarray(self.data.items.iloc[item_indices]['desc'].to_list(), dtype=np.int32).reshape(
-            [len(self.data.train), self.config.max_history_length, -1]) if self.data.include_desc else None
-        image = np.asarray(self.data.items.iloc[item_indices]['image'].to_list(), dtype=np.unicode_).reshape(
-            [len(self.data.train), self.config.max_history_length]) if self.data.include_image else None
-
+    def train_dataset(self, batch_size: int):
         autotune = tf.data.experimental.AUTOTUNE
         dataset = tf.data.Dataset.from_tensor_slices(
-            {
-                'info': info,
-                'desc': desc,
-                'image_path': image,
-                'profile': profile,
-                'context': context
-            }
-        ).map(self.process_train, autotune).batch(batch_size)
+            self.train_data).shuffle(batch_size*2).map(
+            self.process_train, autotune).batch(batch_size)
+
         return dataset
 
     def item_dataset(self, batch_size=32):
-        if not self.data._padded:
-            self.data.padding()
-
         autotune = tf.data.experimental.AUTOTUNE
-        dataset = tf.data.Dataset.from_tensor_slices(
-            {
-                'info': np.asarray(self.data.items['info'], np.int32),
-                'desc': np.asarray(self.data.items['desc'], np.int32) if self.data.include_desc else None,
-                'image_path': np.asarray(self.data.items['image']) if self.data.include_image else None
-            }
-        ).map(self.process_infer, autotune).batch(batch_size)
+        dataset = tf.data.Dataset.from_tensor_slices(self.item_data).map(
+            self.process_infer, autotune).batch(batch_size)
 
-        return dataset
-
-    def infer_dataset(self, item_vectors, batch_size=512):
-        user_indices, trans_indices, ground_truths = [], [], []
-        for record in self.data.test:
-            user_indices.append(record['user'])
-            trans_indices.append(record['indices'])
-            ground_truths.append(record['groud_truth'])
-
-        trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-            trans_indices, maxlen=self.config.max_history_length,
-            padding='post', truncating='post', value=-1
-        ).reshape(len(self.data.train) * self.config.max_history_length)
-        item_indices = self.data.trans.iloc[trans_indices]['item']
-
-        profile = np.asarray(self.data.users.iloc[user_indices]['profile'].to_list(), dtype=np.int32)
-        context = np.asarray(self.data.trans.iloc[trans_indices]['context'].to_list(), dtype=np.int32).reshape(
-            [len(self.data.train), self.config.max_history_length, -1])
-
-        dataset = {
-            'profile': profile,
-            'context': context,
-            'item_indices': item_indices,
-            'ground_truths': ground_truths
-        }
         return dataset
 
     def read_image(self, img_path):

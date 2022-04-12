@@ -10,7 +10,6 @@ class UniteLoss(tf.losses.Loss):
         Args:
             margin (float, optional): 间隙
             gamma (float, optional): 缩放尺度
-        默认参数等价于交叉熵损失
         """
         super(UniteLoss, self).__init__(**kwargs)
         assert 0 <= margin < 1
@@ -72,18 +71,22 @@ class MAP:
     def __init__(self, top_k=10):
         self.top_k = top_k
 
-    def __call__(self, ground_truth, prediction_score):
+    def __call__(self, ground_truth, predictions):
         ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
             ground_truth, maxlen=self.top_k, value=-1)
         m = np.sum(ground_truth != -1, axis=1)
-        x = np.argsort(-prediction_score, axis=-1)[:, :self.top_k]
+
+        # Exclude no-ground_truth samples
+        valid_index = np.where(m > 0)
+        m = m[valid_index]
+        x = predictions[:, :self.top_k][valid_index]
 
         a = np.expand_dims(ground_truth, 2)
         b = np.expand_dims(x, 1)
         c = a == b
 
         rel = np.any(c, axis=1)
-        pre = np.cumsum(rel, axis=-1, dtype=np.float32)/np.array([range(1, self.top_k+1)], np.float32)
+        pre = np.cumsum(rel, axis=-1, dtype=np.float32) / np.array([range(1, self.top_k+1)], np.float32)
         ap = np.sum(pre*rel, axis=1)/m
         map = np.mean(ap)
 

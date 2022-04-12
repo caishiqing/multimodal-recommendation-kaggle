@@ -12,8 +12,8 @@ import os
 
 def train(config: dict,
           data: RecData,
-          test_users: list,
           save_path: str,
+          test_users: list = None,
           epochs: int = 10,
           batch_size: int = 32,
           warmup_proportion: float = 0.1,
@@ -37,10 +37,12 @@ def train(config: dict,
 
     # Process data
     tokenizer = BertTokenizer.from_pretrained(config['bert_path'])
-    data.process_features(tokenizer)
-    data.process_transactions('train', test_users)
-    data_loader = DataLoader(config, data)
-    train_dataset = data_loader.train_dataset(batch_size)
+    data.prepare_features(tokenizer)
+    data.prepare_train(test_users)
+    train_dataset = data.train_dataset(batch_size)
+    config['info_size'] = data.info_size
+    config['profile_size'] = data.profile_size
+    config['context_size'] = data.context_size
 
     # Save model config and feature config files
     model_config = BertConfig.from_pretrained(config['bert_path'])
@@ -51,7 +53,7 @@ def train(config: dict,
 
     # Build and train model
     with strategy.scope():
-        model, items_model, user_model = build_train_model(**config)
+        model, item_model, user_model = build_train_model(**config)
         total_steps = epochs * len(data.train) // batch_size
         optimizer = AdamWarmup(
             warmup_steps=int(total_steps * warmup_proportion),
@@ -75,6 +77,6 @@ def train(config: dict,
 
     # Save model weights file
     model.load_weights(model_path)
-    items_model.save_weights(os.path.join(save_path, 'item.h5'))
+    item_model.save_weights(os.path.join(save_path, 'item.h5'))
     user_model.save_weights(os.path.join(save_path, 'user.h5'))
     os.remove(model_path)
