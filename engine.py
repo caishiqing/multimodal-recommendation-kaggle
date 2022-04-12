@@ -88,6 +88,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
 
     def on_epoch_end(self, epoch, logs):
         user_test_wrapper = self.data.test_wrapper
+        profile = self.data.profile
 
         item_vectors = []
         for batch_inputs in self.data.item_dataset(self.batch_size):
@@ -98,12 +99,9 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         item_vectors[-1] *= 0
 
         predictions = []
-        profile = self.data.profile
         for i in range(0, len(user_test_wrapper), self.batch_size):
             j = min(i + self.batch_size, len(user_test_wrapper))
-            init_state = self.model.user_model.infer_initial_state(
-                profile[user_test_wrapper.user_indices[i:j]], batch_size=j-i
-            )
+            batch_profile = profile[user_test_wrapper.user_indices[i:j]]
             trans_indices = user_test_wrapper.trans_indices[i:j]
             trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
                 trans_indices, maxlen=self.max_history_length, value=-1
@@ -115,7 +113,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             items = item_vectors[trans_indices].reshape([j-i, self.max_history_length, -1])
             user_vectors = self.model.user_model.predict(
                 {
-                    'initial_state': init_state,
+                    'profile': batch_profile,
                     'context': context,
                     'items': items
                 }
