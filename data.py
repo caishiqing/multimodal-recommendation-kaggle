@@ -5,7 +5,6 @@ from typing import List, Union
 import tensorflow as tf
 import pandas as pd
 import numpy as np
-import random
 import json
 import os
 
@@ -51,11 +50,13 @@ class RecData(object):
                  users: pd.DataFrame,
                  trans: pd.DataFrame,
                  config: Union[dict, BertConfig],
-                 feature_path: str = None):
+                 feature_path: str = None,
+                 resize_image: bool = False):
 
         assert 'id' in items and 'id' in users
         assert 'item' in trans and 'user' in trans
         self.config = build_config(config)
+        self.resize_image = resize_image
 
         self.items = items.reset_index(drop=True)
         self.users = users.reset_index(drop=True)
@@ -338,7 +339,10 @@ class RecData(object):
         img_bytes = tf.io.read_file(img_path)
         image = tf.image.decode_image(img_bytes, expand_animations=False)
         image = tf.image.convert_image_dtype(image, tf.float32)
-        # image = tf.image.resize(image, size=(self.config.image_height, self.config.image_width))
+        if self.resize_image:
+            image = tf.image.resize(
+                image, size=(self.config.image_height, self.config.image_width)
+            )
 
         return image
 
