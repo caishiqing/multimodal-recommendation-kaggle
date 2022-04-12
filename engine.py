@@ -1,6 +1,7 @@
 from transformers import BertConfig, BertTokenizer
 from scipy.spatial.distance import cdist
 import tensorflow as tf
+from tqdm import tqdm
 import numpy as np
 import os
 
@@ -91,41 +92,45 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         profile = self.data.profile
 
         item_vectors = []
-        for batch_inputs in self.data.item_dataset(self.batch_size):
-            batch_vector = self.model.item_model(batch_inputs).numpy()
-            item_vectors.append(batch_vector)
+        with tqdm(total=len(self.data.items) // self.batch_size, desc='Compute items') as pbar:
+            for batch_inputs in self.data.item_dataset(self.batch_size):
+                pbar.update()
+                batch_vector = self.model.item_model(batch_inputs).numpy()
+                item_vectors.append(batch_vector)
 
         item_vectors = np.vstack(item_vectors)
         item_vectors[-1] *= 0
 
         predictions = []
-        for i in range(0, len(user_test_wrapper), self.batch_size):
-            j = min(i + self.batch_size, len(user_test_wrapper))
-            batch_profile = profile[user_test_wrapper.user_indices[i:j]]
-            trans_indices = user_test_wrapper.trans_indices[i:j]
-            trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-                trans_indices, maxlen=self.max_history_length, value=-1
-            ).reshape([-1])
-            context = np.asarray(
-                self.data.trans['context'][trans_indices].to_list(),
-                dtype=np.int32
-            ).reshape([j-i, self.max_history_length, -1])
-            items = item_vectors[trans_indices].reshape([j-i, self.max_history_length, -1])
-            user_vectors = self.model.user_model.predict(
-                {
-                    'profile': batch_profile,
-                    'context': context,
-                    'items': items
-                }
-            )
-            # Apply cosine similarity
-            score = cdist(user_vectors, item_vectors, metric='cosine')
-            # Exclude interacted items in history
-            for i, gt in enumerate(user_test_wrapper.ground_truth[i:j]):
-                score[i, gt] -= 100
+        with tqdm(total=len(user_test_wrapper) // self.batch_size, desc='Compute recommendations') as pbar:
+            for i in range(0, len(user_test_wrapper), self.batch_size):
+                pbar.update()
+                j = min(i + self.batch_size, len(user_test_wrapper))
+                batch_profile = profile[user_test_wrapper.user_indices[i:j]]
+                trans_indices = user_test_wrapper.trans_indices[i:j]
+                trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
+                    trans_indices, maxlen=self.max_history_length, value=-1
+                ).reshape([-1])
+                context = np.asarray(
+                    self.data.trans['context'][trans_indices].to_list(),
+                    dtype=np.int32
+                ).reshape([j-i, self.max_history_length, -1])
+                items = item_vectors[trans_indices].reshape([j-i, self.max_history_length, -1])
+                user_vectors = self.model.user_model.predict(
+                    {
+                        'profile': batch_profile,
+                        'context': context,
+                        'items': items
+                    }
+                )
+                # Apply cosine similarity
+                score = cdist(user_vectors, item_vectors, metric='cosine')
+                # Exclude interacted items in history
+                for i, gt in enumerate(user_test_wrapper.ground_truth[i:j]):
+                    score[i, gt] -= 100
 
-            # Cut off topk most related items
-            predictions.append(np.argsort(-score, axis=-1)[:, :self.top_k])
+                # Cut off topk most related items
+                predictions.append(np.argsort(-score, axis=-1)[:, :self.top_k])
 
         map = MAP(self.top_k)(self.data.test_wrapper.ground_truth, predictions)
         logs[self.monitor] = map
