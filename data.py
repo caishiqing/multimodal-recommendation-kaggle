@@ -338,8 +338,7 @@ class RecData(object):
         img_bytes = tf.io.read_file(img_path)
         image = tf.image.decode_image(img_bytes, expand_animations=False)
         image = tf.image.convert_image_dtype(image, tf.float32)
-        image = tf.image.resize(
-            image, size=(self.config.image_height, self.config.image_width))
+        # image = tf.image.resize(image, size=(self.config.image_height, self.config.image_width))
 
         return image
 
