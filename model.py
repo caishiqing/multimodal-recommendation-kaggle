@@ -239,7 +239,10 @@ class RecModel(tf.keras.Model):
 
     def compile(self, optimizer, margin=0.25, gamma=32):
         super(RecModel, self).compile(optimizer=optimizer)
-        self.loss_fn = CircleLoss(margin=margin, gamma=gamma)
+        self.loss_fn = CircleLoss(
+            margin=margin, gamma=gamma,
+            reduction=tf.keras.losses.Reduction.NONE
+        )
 
     @tf.function
     def train_step(self, inputs):
