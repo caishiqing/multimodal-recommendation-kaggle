@@ -5,7 +5,7 @@ from tqdm import tqdm
 import numpy as np
 import os
 
-from model import Item, User, RecModel, build_model
+from model import RecModel, build_model
 from optimizer import AdamWarmup
 from data import RecData
 from evaluate import MAP
@@ -34,6 +34,7 @@ class RecEngine:
               save_path='./model',
               **kwargs):
 
+        os.makedirs(save_path, exist_ok=True)
         data.prepare_features(self.tokenizer)
         data.prepare_train(test_users)
         dataset = data.train_dataset(kwargs.get('batch_size', 64))
