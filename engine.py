@@ -80,8 +80,8 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             monitor=monitor,
             save_best_only=True,
             save_weights_only=True,
-            mode='max'
-            ** kwargs
+            mode='max',
+            **kwargs
         )
         self.data = data
         self.max_history_length = max_history_length
