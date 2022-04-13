@@ -208,7 +208,7 @@ class RecData(object):
     @property
     def info_size(self):
         size = []
-        for feat, feat_map in self.item_feature_dict:
+        for feat, feat_map in self.item_feature_dict.items():
             size.append(len(feat_map))
 
         return size
@@ -216,7 +216,7 @@ class RecData(object):
     @property
     def profile_size(self):
         size = []
-        for feat, feat_map in self.user_feature_dict:
+        for feat, feat_map in self.user_feature_dict.items():
             size.append(len(feat_map))
 
         return size
@@ -224,7 +224,7 @@ class RecData(object):
     @property
     def context_size(self):
         size = []
-        for feat, feat_map in self.trans_feature_dict:
+        for feat, feat_map in self.trans_feature_dict.items():
             size.append(len(feat_map))
 
         return size
