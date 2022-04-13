@@ -49,13 +49,18 @@ class Image(layers.Layer):
         self.embed_dim = embed_dim
         self.backbone = tf.keras.applications.ResNet50(
             include_top=False, pooling='max',  weights=image_weights)
-        self.ln = layers.LayerNormalization()
         self.dense = layers.Dense(self.embed_dim)
 
-    def call(self, inputs, training=None):
-        x = self.backbone(inputs, training=training)
-        img = self.ln(x)
-        return self.dense(img)
+        self.mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
+        self.std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
+
+    def _normalize(self, img):
+        return (img-self.mean)/self.std
+
+    def call(self, img, training=None):
+        x = self._normalize(img)
+        x = self.backbone(x, training=training)
+        return self.dense(x)
 
     def compute_output_shape(self, input_shape):
         return input_shape[0], self.embed_dim
@@ -189,90 +194,6 @@ class User(tf.keras.Model):
         return self.profile_model.predict(profile, batch_size=batch_size)
 
 
-# def build_train_model(
-#     info_size, profile_size, context_size,
-#     embed_dim=512, max_desc_length=8,
-#     max_history_length=64, predict_length=12,
-#     image_height=224, image_width=224,
-#     **kwargs
-# ):
-#     # sequence of items and transactions context of user history
-#     inputs = {
-#         'info': layers.Input(shape=(max_history_length, len(info_size)), dtype=tf.int32),
-#         'desc': layers.Input(shape=(max_history_length, max_desc_length), dtype=tf.int32),
-#         'image': layers.Input(shape=(max_history_length, image_height, image_width, 3), dtype=tf.float32),
-#         'profile': layers.Input(shape=(len(profile_size),), dtype=tf.int32),
-#         'context': layers.Input(shape=(max_history_length, len(context_size)), dtype=tf.int32)
-#     }
-#     item_model = Item(
-#         info_size, embed_dim, name='Item',
-#         bert_path=kwargs.pop('bert_path', None),
-#         image_weights=kwargs.pop('image_weights', None)
-#     )
-#     user_model = User(
-#         profile_size, context_size,
-#         embed_dim, name='User', **kwargs
-#     )
-#     items_model = Items(item_model, name='Items')
-#     # call once to build item model
-#     item_model(
-#         {
-#             'info': inputs['info'][:, 0],
-#             'desc': inputs['desc'][:, 0],
-#             'image': inputs['image'][:, 0]
-#         }
-#     )
-
-#     item_vectors = items_model(inputs)
-#     state_seq, _ = user_model(
-#         {
-#             'profile': inputs['profile'],
-#             'items': item_vectors,
-#             'context': inputs['context']
-#         }
-#     )
-
-#     batch_size = tf.shape(inputs['desc'])[0]
-#     batch_idx = tf.range(0, batch_size)
-#     length_idx = tf.range(0, max_history_length)
-#     a = batch_idx[:, tf.newaxis, tf.newaxis, tf.newaxis]
-#     b = length_idx[tf.newaxis, :, tf.newaxis, tf.newaxis]
-#     c = batch_idx[tf.newaxis, tf.newaxis, :, tf.newaxis]
-#     d = length_idx[tf.newaxis, tf.newaxis, tf.newaxis, :]
-
-#     prd_mask = tf.logical_and(
-#         tf.equal(a, c),
-#         tf.logical_or(
-#             tf.greater_equal(b, d), tf.greater(d-b, predict_length))
-#     )
-#     prd_mask = tf.reshape(prd_mask, [batch_size, max_history_length, -1])
-#     prd_mask = tf.logical_not(prd_mask)  # mask history item
-#     pad_mask = tf.reduce_any(tf.not_equal(inputs['desc'], 0), axis=-1)
-#     pad_mask = tf.reshape(pad_mask, [-1])[tf.newaxis, tf.newaxis, :]
-#     mask = tf.logical_and(pad_mask, prd_mask)  # (batch, len, batch * len)
-
-#     # compute logits
-#     item = tf.nn.l2_normalize(item_vectors, axis=-1)  # (batch, len, dim)
-#     user = tf.nn.l2_normalize(state_seq, axis=-1)  # (batch, len, dim)
-#     item = tf.reshape(item, [-1, embed_dim])  # (batch * len, dim)
-#     logits = tf.matmul(user, item, transpose_b=True)  # (batch, len, batch * len)
-#     logits = tf.boolean_mask(logits, mask)
-
-#     # compute labels
-#     labels = tf.tile(tf.equal(a, c), [1, max_history_length, 1, max_history_length])
-#     labels = tf.cast(tf.reshape(labels, [batch_size, max_history_length, -1]), tf.float32)
-#     labels = tf.boolean_mask(labels, mask)
-
-#     loss = CircleLoss(
-#         margin=kwargs.get('margin', 0.25),
-#         gamma=kwargs.get('gamma', 32)
-#     )(labels, (1 + logits) / 2)
-
-#     train_model = tf.keras.Model(inputs=inputs, outputs=state_seq)
-#     train_model.add_loss(loss)
-#     return train_model, item_model, user_model
-
-
 def build_model(config):
     item_model = Item(
         config['info_size'], embed_dim=config.get('embed_dim', 256),
@@ -342,6 +263,7 @@ class RecModel(tf.keras.Model):
             c = batch_idx[tf.newaxis, tf.newaxis, :, tf.newaxis]
             d = length_idx[tf.newaxis, tf.newaxis, tf.newaxis, :]
 
+            # mask history items and items out of predict window for prediction
             prd_mask = tf.logical_and(
                 tf.equal(a, c),
                 tf.logical_or(
