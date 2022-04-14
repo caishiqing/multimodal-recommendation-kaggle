@@ -239,12 +239,13 @@ class RecData(object):
         self.items['info'] = list(zip(*info))
         if 'desc' in self.items and tokenizer is not None:
             # Wether or not to tokenize items' descriptions
-            self.items['desc'] = self.items['desc'].apply(
-                lambda x: tokenizer(
-                    x, truncation=True, padding='max_length',
-                    max_length=self.config.max_desc_length
-                )['input_ids']
-            )
+            self.items['desc'] = tokenizer(
+                self.items['desc'].to_list(),
+                max_length=self.config.max_desc_length,
+                truncation=True,
+                padding='max_length'
+            )['input_ids']
+
         print('Done!')
 
     def _process_user_features(self):
