@@ -1,5 +1,4 @@
 from transformers import BertConfig, BertTokenizer
-from scipy.spatial.distance import cdist
 import tensorflow as tf
 from tqdm import tqdm
 import numpy as np
@@ -124,15 +123,16 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                         'items': items
                     }
                 )
-                # Apply cosine similarity
-                score = cdist(user_vectors, item_vectors, metric='cosine')
+                # Apply dot similarity
+                score = np.matmul(user_vectors, item_vectors.T)
                 # Exclude interacted items in history
                 for i, gt in enumerate(user_test_wrapper.ground_truth[i:j]):
-                    score[i, gt] -= 100
+                    score[i, gt] -= 1e-5
 
                 # Cut off topk most related items
                 predictions.append(np.argsort(-score, axis=-1)[:, :self.top_k])
 
+        predictions = np.vstack(predictions)
         map = MAP(self.top_k)(self.data.test_wrapper.ground_truth, predictions)
         logs[self.monitor] = map
         super(Checkpoint, self).on_epoch_end(epoch, logs)

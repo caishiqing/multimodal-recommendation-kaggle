@@ -91,3 +91,38 @@ class MAP:
         map = np.mean(ap)
 
         return map
+
+
+class UnifiedLoss(tf.keras.losses.Loss):
+    """ From Circle Loss (CVPR 2019) """
+
+    def __init__(self, margin=0, gamma=1, **kwargs):
+        """
+        Args:
+            margin (float, optional): Margin between positive and negtive
+            gamma (float, optional): Multiplier of logits
+        """
+        super(UnifiedLoss, self).__init__(**kwargs)
+        assert 0 <= margin < 1
+        assert gamma > 0
+
+        self.margin = margin
+        self.gamma = gamma
+
+    def call(self, y_true, y_pred):
+        pos_index = tf.where(y_true == 1)
+        neg_index = tf.where(y_true == 0)
+
+        sp = tf.gather_nd(y_pred, pos_index)
+        sn = tf.gather_nd(y_pred, neg_index)
+
+        loss = tf.math.log(
+            1 + tf.reduce_sum(tf.math.exp(-self.gamma * sp)) * tf.reduce_sum(tf.math.exp(self.gamma * (sn + self.margin)))
+        )
+        return loss
+
+
+if __name__ == '__main__':
+    y_true = tf.constant([1, 1, 0, 0, 0, 1, 0, 0])
+    y_pred = tf.constant([1.6, 0.1, 0.2, -0.5, -0.7, 12.1, -1.2, -0.9])
+    print(UnifiedLoss()(y_true, y_pred))

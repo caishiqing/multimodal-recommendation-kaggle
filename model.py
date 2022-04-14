@@ -1,7 +1,6 @@
-from sqlalchemy import over
 from transformers import TFBertModel, BertConfig
 from tensorflow.keras import layers
-from evaluate import CircleLoss
+from evaluate import UnifiedLoss
 import tensorflow as tf
 import os
 
@@ -237,9 +236,9 @@ class RecModel(tf.keras.Model):
         self.items_model = Items(self.item_model, name='Items')
         self.user_model = user_model
 
-    def compile(self, optimizer, margin=0.25, gamma=32):
+    def compile(self, optimizer, margin=0.0, gamma=1):
         super(RecModel, self).compile(optimizer=optimizer)
-        self.loss_fn = CircleLoss(
+        self.loss_fn = UnifiedLoss(
             margin=margin, gamma=gamma,
             reduction=tf.keras.losses.Reduction.NONE
         )
@@ -279,10 +278,8 @@ class RecModel(tf.keras.Model):
             mask = tf.logical_and(pad_mask, prd_mask)  # (batch, len, batch * len)
 
             # compute logits
-            item = tf.nn.l2_normalize(item_vectors, axis=-1)  # (batch, len, dim)
-            user = tf.nn.l2_normalize(state_seq, axis=-1)  # (batch, len, dim)
-            item = tf.reshape(item, [-1, self.config['embed_dim']])  # (batch * len, dim)
-            logits = tf.matmul(user, item, transpose_b=True)  # (batch, len, batch * len)
+            item_vectors = tf.reshape(item_vectors, [-1, self.config['embed_dim']])  # (batch * len, dim)
+            logits = tf.matmul(state_seq, item_vectors, transpose_b=True)  # (batch, len, batch * len)
             logits = tf.boolean_mask(logits, mask)
 
             # compute labels
@@ -290,7 +287,7 @@ class RecModel(tf.keras.Model):
             labels = tf.cast(tf.reshape(labels, [batch_size, seq_length, -1]), tf.float32)
             labels = tf.boolean_mask(labels, mask)
 
-            loss = self.loss_fn(labels, (1 + logits) / 2)
+            loss = self.loss_fn(labels, logits)
 
         variables = self.item_model.trainable_weights+self.user_model.trainable_weights
         gradients = tape.gradient(loss, variables)
