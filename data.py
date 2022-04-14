@@ -176,7 +176,7 @@ class RecData(object):
         if not self.include_desc:
             return None
 
-        assert self._padded
+        assert self._processed
         token_ids = tf.keras.preprocessing.sequence.pad_sequences(
             self.items['desc'].to_list(), maxlen=self.config.max_desc_length,
             padding='post', truncating='post', dtype=self.int_type, value=0
@@ -188,7 +188,7 @@ class RecData(object):
 
     @property
     def info_data(self):
-        assert self._padded
+        assert self._processed
         return np.asarray(self.items['info'].to_list(), self.int_type)
 
     @property
@@ -200,12 +200,12 @@ class RecData(object):
 
     @property
     def profile_data(self):
-        assert self._padded
+        assert self._processed
         return np.asarray(self.users['profile'].to_list(), dtype=self.int_type)
 
     @property
     def context_data(self):
-        assert self._padded
+        assert self._processed
         return np.asarray(self.trans['context'].to_list(), dtype=self.int_type)
 
     @property
