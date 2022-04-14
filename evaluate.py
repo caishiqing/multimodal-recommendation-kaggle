@@ -117,7 +117,8 @@ class UnifiedLoss(tf.keras.losses.Loss):
         sn = tf.gather_nd(y_pred, neg_index)
 
         loss = tf.math.log(
-            1 + tf.reduce_sum(tf.math.exp(-self.gamma * sp)) * tf.reduce_sum(tf.math.exp(self.gamma * (sn + self.margin)))
+            1 + tf.reduce_sum(tf.math.exp(-self.gamma * sp)) *
+            tf.reduce_sum(tf.math.exp(self.gamma * (sn + self.margin)))
         )
         return loss
 

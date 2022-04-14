@@ -358,6 +358,7 @@ class RecData(object):
         image_path = inputs.pop('image_path', None)
         if image_path is not None:
             inputs['image'] = tf.map_fn(_get_image, image_path, dtype=tf.float32)
+            inputs['image'].set_shape((self.config.image_height, self.config.image_width, 3))
 
         return inputs
 
@@ -367,6 +368,7 @@ class RecData(object):
         image_path = inputs.pop('image_path', None)
         if image_path is not None:
             inputs['image'] = self.read_image(inputs['image_path'])
+            inputs['image'].set_shape((self.config.image_height, self.config.image_width, 3))
 
         return inputs
 

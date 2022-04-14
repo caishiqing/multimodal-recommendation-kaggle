@@ -236,7 +236,7 @@ class RecModel(tf.keras.Model):
         self.items_model = Items(self.item_model, name='Items')
         self.user_model = user_model
 
-    def compile(self, optimizer, margin=0.0, gamma=1):
+    def compile(self, optimizer, margin=0.0, gamma=1.0):
         super(RecModel, self).compile(optimizer=optimizer)
         self.loss_fn = UnifiedLoss(
             margin=margin, gamma=gamma,

@@ -53,7 +53,11 @@ class RecEngine:
             decay_steps=total_steps - int(total_steps * kwargs.get('warmup_proportion', 0.1)),
             initial_learning_rate=kwargs.get('learning_rate', 1e-4)
         )
-        rec_model.compile(optimizer=optimizer)
+        rec_model.compile(
+            optimizer=optimizer,
+            margin=kwargs.get('margin', 0.0),
+            gamma=kwargs.get('gamma', 1.0)
+        )
 
         # Build checkpoint and train model
         checkpoint = Checkpoint(
