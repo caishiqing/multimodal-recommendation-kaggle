@@ -139,12 +139,12 @@ class RecData(object):
         ).reshape([-1])
         item_indices = self.trans.iloc[trans_indices]['item']
 
-        profile = np.asarray(self.users.iloc[self.train_wrapper.user_indices]['profile'].to_list(), dtype=np.int32)
-        info = np.asarray(self.items.iloc[item_indices]['info'].to_list(), dtype=np.int32).reshape(
+        profile = np.asarray(self.users.iloc[self.train_wrapper.user_indices]['profile'].to_list(), dtype=np.int16)
+        info = np.asarray(self.items.iloc[item_indices]['info'].to_list(), dtype=np.int16).reshape(
             [len(self.train_wrapper), self.config.max_history_length, -1])
-        context = np.asarray(self.trans.iloc[trans_indices]['context'].to_list(), dtype=np.int32).reshape(
+        context = np.asarray(self.trans.iloc[trans_indices]['context'].to_list(), dtype=np.int16).reshape(
             [len(self.train_wrapper.user_indices), self.config.max_history_length, -1])
-        desc = np.asarray(self.items.iloc[item_indices]['desc'].to_list(), dtype=np.int32).reshape(
+        desc = np.asarray(self.items.iloc[item_indices]['desc'].to_list(), dtype=np.int16).reshape(
             [len(self.train_wrapper), self.config.max_history_length, -1]) if self.include_desc else None
         image = np.asarray(self.items.iloc[item_indices]['image'].to_list(), dtype=np.unicode_).reshape(
             [len(self.train_wrapper), self.config.max_history_length]) if self.include_image else None
@@ -164,15 +164,15 @@ class RecData(object):
             self.padding()
 
         data = {
-            'info': np.asarray(self.items['info'].to_list(), np.int32),
-            'desc': np.asarray(self.items['desc'], np.int32) if self.include_desc else None,
+            'info': np.asarray(self.items['info'].to_list(), np.int16),
+            'desc': np.asarray(self.items['desc'], np.int16) if self.include_desc else None,
             'image_path': np.asarray(self.items['image']) if self.include_image else None
         }
         return data
 
     @property
     def profile(self):
-        return np.asarray(self.users['profile'].to_list(), dtype=np.int32)
+        return np.asarray(self.users['profile'].to_list(), dtype=np.int16)
 
     @property
     def infer_wrapper(self):
