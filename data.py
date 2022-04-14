@@ -1,4 +1,5 @@
 import profile
+from black import token
 from transformers import BertTokenizer, BertConfig
 from collections import OrderedDict, namedtuple
 from typing import List, Union
@@ -139,14 +140,14 @@ class RecData(object):
         ).reshape([-1])
         item_indices = self.trans.iloc[trans_indices]['item']
 
-        profile = np.asarray(self.users.iloc[self.train_wrapper.user_indices]['profile'].to_list(), dtype=np.int16)
-        info = np.asarray(self.items.iloc[item_indices]['info'].to_list(), dtype=np.int16).reshape(
+        profile = self.profile_data[self.train_wrapper.user_indices]
+        info = self.info_data[item_indices].reshape(
             [len(self.train_wrapper), self.config.max_history_length, -1])
-        context = np.asarray(self.trans.iloc[trans_indices]['context'].to_list(), dtype=np.int16).reshape(
+        context = self.context_data[trans_indices].reshape(
             [len(self.train_wrapper.user_indices), self.config.max_history_length, -1])
-        desc = np.asarray(self.items.iloc[item_indices]['desc'].to_list(), dtype=np.int16).reshape(
+        desc = self.desc_data[item_indices].reshape(
             [len(self.train_wrapper), self.config.max_history_length, -1]) if self.include_desc else None
-        image = np.asarray(self.items.iloc[item_indices]['image'].to_list(), dtype=np.unicode_).reshape(
+        image = self.image_path[item_indices].reshape(
             [len(self.train_wrapper), self.config.max_history_length]) if self.include_image else None
 
         data = {
@@ -164,15 +165,48 @@ class RecData(object):
             self.padding()
 
         data = {
-            'info': np.asarray(self.items['info'].to_list(), np.int16),
-            'desc': np.asarray(self.items['desc'], np.int16) if self.include_desc else None,
-            'image_path': np.asarray(self.items['image']) if self.include_image else None
+            'info': self.info_data,
+            'desc': self.desc_data,
+            'image_path': self.image_path
         }
         return data
 
     @property
-    def profile(self):
-        return np.asarray(self.users['profile'].to_list(), dtype=np.int16)
+    def desc_data(self):
+        if not self.include_desc:
+            return None
+
+        assert self._padded
+        token_ids = tf.keras.preprocessing.sequence.pad_sequences(
+            self.items['desc'].to_list(), maxlen=self.config.max_desc_length,
+            padding='post', truncating='post', dtype=self.int_type, value=0
+        )
+        if self._padded:
+            token_ids[-1] *= 0
+
+        return token_ids
+
+    @property
+    def info_data(self):
+        assert self._padded
+        return np.asarray(self.items['info'].to_list(), self.int_type)
+
+    @property
+    def image_path(self):
+        if not self.include_image:
+            return None
+
+        return np.asarray(self.items['image'])
+
+    @property
+    def profile_data(self):
+        assert self._padded
+        return np.asarray(self.users['profile'].to_list(), dtype=self.int_type)
+
+    @property
+    def context_data(self):
+        assert self._padded
+        return np.asarray(self.trans['context'].to_list(), dtype=self.int_type)
 
     @property
     def infer_wrapper(self):
@@ -183,27 +217,15 @@ class RecData(object):
 
         return wrapper
 
-    def padding(self):
-        # pad items
-        padding = {col: None for col in self.items}
-        padding['info'] = (0,) * len(self.item_feature_dict)
-        padding['desc'] = (0,) * self.config.max_desc_length
-        padding['image'] = ''
-        self.items.loc[-1] = padding
+    @property
+    def int_type(self):
+        dtype = np.uint16
+        max_size16 = 65535
+        for size in self.info_size + self.profile_size + self.context_size:
+            if size > max_size16:
+                return np.int32
 
-        # pad users
-        padding = {col: None for col in self.users}
-        padding['profile'] = (0,) * len(self.user_feature_dict)
-        self.users.loc[-1] = padding
-
-        # pad transactions
-        padding = {col: None for col in self.users}
-        padding['context'] = (0,) * len(self.trans_feature_dict)
-        padding['item'] = -1
-        padding['user'] = -1
-        self.trans.loc[-1] = padding
-
-        self._padded = True
+        return dtype
 
     @property
     def info_size(self):
@@ -229,6 +251,28 @@ class RecData(object):
 
         return size
 
+    def padding(self):
+        # pad items
+        padding = {col: None for col in self.items}
+        padding['info'] = (0,) * len(self.item_feature_dict)
+        padding['desc'] = (0,) * self.config.max_desc_length
+        padding['image'] = ''
+        self.items.loc[-1] = padding
+
+        # pad users
+        padding = {col: None for col in self.users}
+        padding['profile'] = (0,) * len(self.user_feature_dict)
+        self.users.loc[-1] = padding
+
+        # pad transactions
+        padding = {col: None for col in self.users}
+        padding['context'] = (0,) * len(self.trans_feature_dict)
+        padding['item'] = -1
+        padding['user'] = -1
+        self.trans.loc[-1] = padding
+
+        self._padded = True
+
     def _process_item_features(self, tokenizer: BertTokenizer = None):
         print('Process item features ...', end='')
         info = []
@@ -242,8 +286,6 @@ class RecData(object):
             self.items['desc'] = tokenizer(
                 self.items['desc'].to_list(),
                 max_length=self.config.max_desc_length,
-                truncation=True,
-                padding='max_length',
                 return_attention_mask=False,
                 return_token_type_ids=False
             )['input_ids']

@@ -93,7 +93,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
 
     def on_epoch_end(self, epoch, logs):
         user_test_wrapper = self.data.test_wrapper
-        profile = self.data.profile
+        profile = self.data.profile_data
 
         item_vectors = []
         with tqdm(total=len(self.data.items) // self.batch_size, desc='Compute items') as pbar:
