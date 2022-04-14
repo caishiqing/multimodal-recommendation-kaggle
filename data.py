@@ -243,7 +243,9 @@ class RecData(object):
                 self.items['desc'].to_list(),
                 max_length=self.config.max_desc_length,
                 truncation=True,
-                padding='max_length'
+                padding='max_length',
+                return_attention_mask=False,
+                return_token_type_ids=False
             )['input_ids']
 
         print('Done!')
