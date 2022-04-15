@@ -179,7 +179,7 @@ class RecData(object):
         assert self._processed
         token_ids = tf.keras.preprocessing.sequence.pad_sequences(
             self.items['desc'].to_list(), maxlen=self.config.max_desc_length,
-            padding='post', truncating='post', dtype=self.int_type, value=0
+            padding='post', truncating='post', dtype=np.int32, value=0
         )
         if self._padded:
             token_ids[-1] *= 0
@@ -189,7 +189,7 @@ class RecData(object):
     @property
     def info_data(self):
         assert self._processed
-        return np.asarray(self.items['info'].to_list(), self.int_type)
+        return np.asarray(self.items['info'].to_list(), self.np.int32)
 
     @property
     def image_path(self):
@@ -201,12 +201,12 @@ class RecData(object):
     @property
     def profile_data(self):
         assert self._processed
-        return np.asarray(self.users['profile'].to_list(), dtype=self.int_type)
+        return np.asarray(self.users['profile'].to_list(), dtype=np.int32)
 
     @property
     def context_data(self):
         assert self._processed
-        return np.asarray(self.trans['context'].to_list(), dtype=self.int_type)
+        return np.asarray(self.trans['context'].to_list(), dtype=np.int32)
 
     @property
     def infer_wrapper(self):
@@ -216,16 +216,6 @@ class RecData(object):
             wrapper.append(user_idx, trans_indices)
 
         return wrapper
-
-    @property
-    def int_type(self):
-        dtype = np.uint16
-        max_size16 = 65535
-        for size in self.info_size + self.profile_size + self.context_size:
-            if size > max_size16:
-                return np.int32
-
-        return dtype
 
     @property
     def info_size(self):
