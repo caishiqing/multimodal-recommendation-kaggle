@@ -1,5 +1,3 @@
-import profile
-from black import token
 from transformers import BertTokenizer, BertConfig
 from collections import OrderedDict, namedtuple
 from typing import List, Union
