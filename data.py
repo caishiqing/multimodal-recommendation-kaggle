@@ -345,7 +345,7 @@ class RecData(object):
         info = pd.DataFrame(info, index=None)
         print(info)
 
-    def save_feature_dict(self, save_dir):
+    def save_feature_dict(self, save_dir: str):
         # Save feature dict to direction
         with open(os.path.join(save_dir, 'item_feature_dict.json'), 'w', encoding='utf8') as fp:
             json.dump(self.item_feature_dict, fp)
@@ -354,7 +354,7 @@ class RecData(object):
         with open(os.path.join(save_dir, 'trans_feature_dict.json'), 'w', encoding='utf8') as fp:
             json.dump(self.trans_feature_dict, fp)
 
-    def load_feature_dict(self, load_dir):
+    def load_feature_dict(self, load_dir: str):
         # Load feature dict from direction
         with open(os.path.join(load_dir, 'item_feature_dict.json'), 'r', encoding='utf8') as fp:
             self.item_feature_dict = json.load(fp)
@@ -364,25 +364,59 @@ class RecData(object):
             self.trans_feature_dict = json.load(fp)
         self._display_feature_info()
 
-    def train_dataset(self, batch_size: int):
+    def train_dataset(self, batch_size: int = 8):
         autotune = tf.data.experimental.AUTOTUNE
         dataset = tf.data.Dataset.from_tensor_slices(
             self.train_data).shuffle(batch_size*2).map(
-            self.process_train, autotune).batch(batch_size)
+            self._process_train, autotune).batch(batch_size)
 
         return dataset
 
-    def item_dataset(self, batch_size=32):
+    def train_dataset_from_tfrecords(self, batch_size: int = 8, tfrecords_dir: str = None):
+        assert tfrecords_dir is not None or 'tfrecord' in self.items
+        if tfrecords_dir is not None:
+            item_tfrec_path = [os.path.join(tfrecords_dir, str(item_id)+'.tfrecord') for item_id in self.items['id']]
+        else:
+            item_tfrec_path = self.items['tfrecord'].to_list()
+
+        if not self._padded:
+            self.padding()
+
+        trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
+            self.train_wrapper.trans_indices, maxlen=self.config.max_history_length,
+            padding='pre', truncating='pre', value=-1
+        ).reshape([-1])
+        item_indices = self.trans.iloc[trans_indices]['item']
+        item_record_paths = np.asarray(item_tfrec_path)[item_indices]
+
+        autotune = tf.data.experimental.AUTOTUNE
+        profile = tf.data.Dataset.from_tensor_slices(
+            self.profile_data[self.train_wrapper.user_indices]).unbatch()
+        context = tf.data.Dataset.from_tensor_slices(
+            self.context_data[trans_indices]).unbatch().batch(self.config.max_history_length)
+        item = tf.data.TFRecordDataset(
+            item_record_paths, num_parallel_reads=autotune
+        ).map(self._parse_item_tfrecord, autotune).unbatch().batch(self.config.max_history_length)
+
+        dataset = tf.data.Dataset.zip((profile, context, item)).map(
+            self._process_tfrecord).shuffle(2*batch_size).batch(batch_size)
+        return dataset
+
+    def item_dataset(self, batch_size: int = 32):
         autotune = tf.data.experimental.AUTOTUNE
         dataset = tf.data.Dataset.from_tensor_slices(self.item_data).map(
-            self.process_infer, autotune).batch(batch_size)
+            self._process_infer, autotune).batch(batch_size)
 
         return dataset
 
-    def read_image(self, img_path):
-        img_bytes = tf.io.read_file(img_path)
+    def _decode_image(self, img_bytes):
         image = tf.image.decode_image(img_bytes, expand_animations=False)
         image = tf.image.convert_image_dtype(image, tf.float32)
+        return image
+
+    def _read_image(self, img_path):
+        img_bytes = tf.io.read_file(img_path)
+        image = self._decode_image(img_bytes)
         if self.resize_image:
             image = tf.image.resize(
                 image, size=(self.config.image_height, self.config.image_width)
@@ -390,14 +424,14 @@ class RecData(object):
 
         return image
 
-    def process_train(self, inputs):
+    def _process_train(self, inputs):
         """ Train images are 2D image path 
         """
         def _pad_image():
             return tf.zeros((self.config.image_height, self.config.image_width, 3), dtype=tf.float32)
 
         def _get_image(img):
-            return tf.cond(tf.not_equal(img, ''), lambda: self.read_image(img), _pad_image)
+            return tf.cond(tf.not_equal(img, ''), lambda: self._read_image(img), _pad_image)
 
         image_path = inputs.pop('image_path', None)
         if image_path is not None:
@@ -407,15 +441,39 @@ class RecData(object):
 
         return inputs
 
-    def process_infer(self, inputs):
+    def _process_tfrecord(self, profile, context, item):
+        inputs = {
+            'profile': profile,
+            'context': context,
+            'image': item['image'],
+            'desc': item['desc'],
+            'info': item['info']
+        }
+        return inputs
+
+    def _process_infer(self, inputs):
         """ Infer images are list of image path 
         """
         image_path = inputs.pop('image_path', None)
         if image_path is not None:
-            inputs['image'] = self.read_image(inputs['image_path'])
+            inputs['image'] = self._read_image(inputs['image_path'])
             inputs['image'].set_shape((self.config.image_height, self.config.image_width, 3))
 
         return inputs
+
+    def _parse_item_tfrecord(self, item_tfrecord_proto):
+        example = tf.io.parse_single_example(item_tfrecord_proto, self.item_schema)
+        example['image'] = self._decode_image(example['image'])
+        return example
+
+    @property
+    def item_schema(self):
+        schema = {
+            'info': tf.io.FixedLenFeature([len(self.info_size)], tf.int64),
+            'desc': tf.io.FixedLenFeature([self.config.max_desc_length], tf.int64),
+            'image': tf.io.FixedLenFeature([], tf.string),
+        }
+        return schema
 
 
 def build_config(config):
