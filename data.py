@@ -84,9 +84,9 @@ class RecData(object):
     def include_desc(self):
         return 'desc' in self.items
 
-    def prepare_features(self, tokenizer: BertTokenizer = None):
+    def prepare_features(self, tokenizer: BertTokenizer = None, padding_desc=False):
         if not self._processed:
-            self._process_item_features(tokenizer)
+            self._process_item_features(tokenizer, padding_desc)
             self._process_user_features()
             self._process_transaction_features()
             self._processed = True
@@ -246,7 +246,7 @@ class RecData(object):
     def padding(self):
         # pad items
         padding = {col: None for col in self.items}
-        padding['id'] = -1
+        padding['id'] = 'padding'
         padding['info'] = (0,) * len(self.item_feature_dict)
         padding['desc'] = (0,) * self.config.max_desc_length
         padding['image'] = ''
@@ -254,7 +254,7 @@ class RecData(object):
 
         # pad users
         padding = {col: None for col in self.users}
-        padding['id'] = -1
+        padding['id'] = 'padding'
         padding['profile'] = (0,) * len(self.user_feature_dict)
         self.users.loc[-1] = padding
 
@@ -267,7 +267,10 @@ class RecData(object):
 
         self._padded = True
 
-    def _process_item_features(self, tokenizer: BertTokenizer = None):
+    def _process_item_features(self,
+                               tokenizer: BertTokenizer = None,
+                               padding_desc=False):
+
         print('Process item features ...', end='')
         info = []
         for key, feat_map in self.item_feature_dict.items():
@@ -280,6 +283,8 @@ class RecData(object):
             self.items['desc'] = tokenizer(
                 self.items['desc'].to_list(),
                 max_length=self.config.max_desc_length,
+                truncation=True,
+                padding=padding_desc,
                 return_attention_mask=False,
                 return_token_type_ids=False
             )['input_ids']
