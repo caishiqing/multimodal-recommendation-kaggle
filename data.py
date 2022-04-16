@@ -189,7 +189,7 @@ class RecData(object):
     @property
     def info_data(self):
         assert self._processed
-        return np.asarray(self.items['info'].to_list(), self.np.int32)
+        return np.asarray(self.items['info'].to_list(), np.int32)
 
     @property
     def image_path(self):
