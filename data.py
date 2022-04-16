@@ -37,13 +37,6 @@ class DataWrapper(object):
 
 
 class RecData(object):
-    item_feature_dict = OrderedDict()
-    user_feature_dict = OrderedDict()
-    trans_feature_dict = OrderedDict()
-    train_wrapper = DataWrapper()
-    test_wrapper = DataWrapper()
-    _padded = False
-    _processed = False
     _sys_fields = ('id', 'desc', 'image', 'trans', 'user', 'item')
 
     def __init__(self,
@@ -56,6 +49,15 @@ class RecData(object):
 
         assert 'id' in items and 'id' in users
         assert 'item' in trans and 'user' in trans
+
+        self.item_feature_dict = OrderedDict()
+        self.user_feature_dict = OrderedDict()
+        self.trans_feature_dict = OrderedDict()
+        self.train_wrapper = DataWrapper()
+        self.test_wrapper = DataWrapper()
+        self._padded = False
+        self._processed = False
+
         self.config = build_config(config)
         self.resize_image = resize_image
 
@@ -90,6 +92,8 @@ class RecData(object):
             self._process_user_features()
             self._process_transaction_features()
             self._processed = True
+        else:
+            print("Features are aleady prepared.")
 
         self._display_feature_info()
 
@@ -244,6 +248,7 @@ class RecData(object):
     def padding(self):
         # pad items
         padding = {col: None for col in self.items}
+        padding['id'] = -1
         padding['info'] = (0,) * len(self.item_feature_dict)
         padding['desc'] = (0,) * self.config.max_desc_length
         padding['image'] = ''
@@ -251,6 +256,7 @@ class RecData(object):
 
         # pad users
         padding = {col: None for col in self.users}
+        padding['id'] = -1
         padding['profile'] = (0,) * len(self.user_feature_dict)
         self.users.loc[-1] = padding
 
