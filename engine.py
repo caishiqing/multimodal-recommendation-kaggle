@@ -60,9 +60,10 @@ class RecEngine:
         )
 
         # Build checkpoint and train model
+        top_k = self.config.get('top_k', 12)
         checkpoint = Checkpoint(
             save_path, data,
-            top_k=kwargs.get('top_k', 12),
+            top_k=kwargs.get('top_k', top_k),
             max_history_length=self.config.get('max_history_length', 50),
             batch_size=kwargs.get('infer_batch_size', 256)
         )

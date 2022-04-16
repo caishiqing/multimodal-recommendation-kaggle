@@ -106,17 +106,17 @@ class RecData(object):
                 if len(trans_indices) == 1:
                     # no transactions, only use profile
                     self.test_wrapper.append(user_idx, [], item_indices)
-                elif len(df) < self.config.predict_length:
+                elif len(df) < self.config.top_k:
                     self.test_wrapper.append(user_idx, trans_indices[:1], item_indices[1:])
                 else:
                     self.test_wrapper.append(
                         user_idx,
-                        trans_indices[:-self.config.predict_length],
-                        item_indices[-self.config.predict_length:]
+                        trans_indices[:-self.config.top_k],
+                        item_indices[-self.config.top_k:]
                     )
             else:
                 # train sample
-                cut_offset = max(len(trans_indices)-self.config.predict_length, self.config.max_history_length)
+                cut_offset = max(len(trans_indices)-self.config.top_k, self.config.max_history_length)
                 self.train_wrapper.append(user_idx, trans_indices[:cut_offset])
                 if cut_offset < len(trans_indices):
                     # cut off for test
