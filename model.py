@@ -280,12 +280,11 @@ class RecModel(tf.keras.Model):
             # compute logits
             item_vectors = tf.reshape(item_vectors, [-1, self.config['embed_dim']])  # (batch * len, dim)
             logits = tf.matmul(state_seq, item_vectors, transpose_b=True)  # (batch, len, batch * len)
-            logits = tf.boolean_mask(logits, mask)
 
             # compute labels
             labels = tf.tile(tf.equal(a, c), [1, seq_length, 1, seq_length])
             labels = tf.cast(tf.reshape(labels, [batch_size, seq_length, -1]), tf.float32)
-            labels = tf.boolean_mask(labels, mask)
+            labels *= tf.cast(tf.where(mask, labels, -1), labels.dtype)
 
             loss = self.loss_fn(labels, logits)
 
