@@ -31,19 +31,15 @@ class RecEngine:
     def train(self, data: RecData,
               test_users: list = None,
               save_path: str = './model',
-              tfrecords_dir: str = None,
               **kwargs):
 
         os.makedirs(save_path, exist_ok=True)
+        batch_size = kwargs.get('batch_size', 32)
+
         data.prepare_features(self.tokenizer)
         data.prepare_train(test_users)
+        dataset = data.train_dataset(batch_size)
         rec_model = RecModel(self.config, self.item_model, self.user_model)
-
-        batch_size = kwargs.get('batch_size', 32)
-        if tfrecords_dir is not None:
-            dataset = data.train_dataset_from_tfrecords(batch_size, tfrecords_dir)
-        else:
-            dataset = data.train_dataset(batch_size)
 
         # Save files related to model
         model_config = BertConfig.from_pretrained(self.config.get('bert_path', 'bert-base-uncased'))

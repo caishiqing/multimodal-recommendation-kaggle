@@ -35,7 +35,10 @@ class DataWrapper(object):
 
 
 class RecData(object):
-    _sys_fields = ('id', 'desc', 'image', 'trans', 'user', 'item')
+    _sys_fields = (
+        'id', 'desc', 'info', 'image', 'tfrecord',
+        'profile', 'context', 'user', 'item', 'trans'
+    )
 
     def __init__(self,
                  items: pd.DataFrame,
@@ -43,6 +46,8 @@ class RecData(object):
                  trans: pd.DataFrame,
                  config: Union[dict, BertConfig],
                  feature_path: str = None,
+                 image_dir: str = None,
+                 tfrecord_dir: str = None,
                  resize_image: bool = False):
 
         assert 'id' in items and 'id' in users
@@ -75,6 +80,16 @@ class RecData(object):
             self.load_feature_dict(feature_path)
         else:
             self._learn_feature_dict()
+
+        self.padding()
+
+        # add tfrecord path column to item
+        if tfrecord_dir is not None:
+            self.items['tfrecord'] = self.items['id'].apply(lambda x: os.path.join(tfrecord_dir, str(x)+'.tfrecord'))
+
+        # add image path to item
+        if image_dir is not None:
+            self.items['image'] = self.items['id'].apply(lambda x: os.path.join(image_dir, str(x)+'.jpg'))
 
     @property
     def include_image(self):
@@ -131,49 +146,6 @@ class RecData(object):
         print('Test samples: {}'.format(len(self.test_wrapper)))
 
     @property
-    def train_data(self):
-        if not self._padded:
-            self.padding()
-
-        # Note that padding is pre using latest transactions
-        trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-            self.train_wrapper.trans_indices, maxlen=self.config.max_history_length,
-            padding='pre', truncating='pre', value=-1
-        ).reshape([-1])
-        item_indices = self.trans.iloc[trans_indices]['item']
-
-        profile = self.profile_data[self.train_wrapper.user_indices]
-        info = self.info_data[item_indices].reshape(
-            [len(self.train_wrapper), self.config.max_history_length, -1])
-        context = self.context_data[trans_indices].reshape(
-            [len(self.train_wrapper.user_indices), self.config.max_history_length, -1])
-        desc = self.desc_data[item_indices].reshape(
-            [len(self.train_wrapper), self.config.max_history_length, -1]) if self.include_desc else None
-        image = self.image_path[item_indices].reshape(
-            [len(self.train_wrapper), self.config.max_history_length]) if self.include_image else None
-
-        data = {
-            'info': info,
-            'desc': desc,
-            'image_path': image,
-            'profile': profile,
-            'context': context
-        }
-        return data
-
-    @property
-    def item_data(self):
-        if not self._padded:
-            self.padding()
-
-        data = {
-            'info': self.info_data,
-            'desc': self.desc_data,
-            'image_path': self.image_path
-        }
-        return data
-
-    @property
     def desc_data(self):
         if not self.include_desc:
             return None
@@ -199,6 +171,13 @@ class RecData(object):
             return None
 
         return np.asarray(self.items['image'])
+
+    @property
+    def tfrecord_path(self):
+        if 'tfrecord' not in self.items:
+            return None
+
+        return np.asarray(self.items['tfrecord'])
 
     @property
     def profile_data(self):
@@ -249,7 +228,6 @@ class RecData(object):
         padding['id'] = 'padding'
         padding['info'] = (0,) * len(self.item_feature_dict)
         padding['desc'] = (0,) * self.config.max_desc_length
-        padding['image'] = ''
         self.items.loc[-1] = padding
 
         # pad users
@@ -365,47 +343,66 @@ class RecData(object):
         self._display_feature_info()
 
     def train_dataset(self, batch_size: int = 8):
-        autotune = tf.data.experimental.AUTOTUNE
-        dataset = tf.data.Dataset.from_tensor_slices(
-            self.train_data).shuffle(batch_size*2).map(
-            self._process_train, autotune).batch(batch_size)
-
-        return dataset
-
-    def train_dataset_from_tfrecords(self, batch_size: int = 8, tfrecords_dir: str = None):
-        assert tfrecords_dir is not None or 'tfrecord' in self.items
-        if tfrecords_dir is not None:
-            item_tfrec_path = [os.path.join(tfrecords_dir, str(item_id)+'.tfrecord') for item_id in self.items['id']]
-        else:
-            item_tfrec_path = self.items['tfrecord'].to_list()
-
-        if not self._padded:
-            self.padding()
-
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             self.train_wrapper.trans_indices, maxlen=self.config.max_history_length,
             padding='pre', truncating='pre', value=-1
         ).reshape([-1])
         item_indices = self.trans.iloc[trans_indices]['item']
-        item_record_paths = np.asarray(item_tfrec_path)[item_indices]
 
-        autotune = tf.data.experimental.AUTOTUNE
         profile = tf.data.Dataset.from_tensor_slices(
             self.profile_data[self.train_wrapper.user_indices]).unbatch()
         context = tf.data.Dataset.from_tensor_slices(
             self.context_data[trans_indices]).unbatch().batch(self.config.max_history_length)
-        item = tf.data.TFRecordDataset(
-            item_record_paths, num_parallel_reads=autotune
-        ).map(self._parse_item_tfrecord, autotune).unbatch().batch(self.config.max_history_length)
 
-        dataset = tf.data.Dataset.zip((profile, context, item)).map(
-            self._process_tfrecord).shuffle(2*batch_size).batch(batch_size)
+        tfrecord_path = self.tfrecord_path
+        image_path = self.image_path
+        assert tfrecord_path is not None or image_path is not None
+
+        autotune = tf.data.experimental.AUTOTUNE
+        if tfrecord_path is not None:
+            print('Building dataset with items from TFRecords ...', end='')
+            item_record_paths = tfrecord_path[item_indices]
+            item = tf.data.TFRecordDataset(
+                item_record_paths, num_parallel_reads=autotune
+            ).map(self._parse_item_tfrecord, autotune).unbatch().batch(self.config.max_history_length)
+
+            dataset = tf.data.Dataset.zip((profile, context, item)).map(
+                self._process_tfrecord).shuffle(2*batch_size).batch(batch_size)
+            print('Done.')
+        else:
+            print('Building dataset with items from image files ...', end='')
+            item_image_paths = image_path[item_indices]
+            info = tf.data.Dataset.from_tensor_slices(
+                self.info_data[item_indices]).unbatch().batch(self.config.max_history_length)
+            desc = tf.data.Dataset.from_tensor_slices(
+                self.desc_data[item_indices]).unbatch().batch(self.config.max_history_length)
+            image = tf.data.Dataset.from_tensor_slices(
+                item_image_paths).map(self._read_image, autotune).unbatch().batch(self.config.max_history_length)
+            dataset = tf.data.Dataset.zip((profile, context, info, desc, image)).map(
+                self._process_train).shuffle(2*batch_size).batch(batch_size)
+            print('Done!')
+
         return dataset
 
     def item_dataset(self, batch_size: int = 32):
         autotune = tf.data.experimental.AUTOTUNE
-        dataset = tf.data.Dataset.from_tensor_slices(self.item_data).map(
-            self._process_infer, autotune).batch(batch_size)
+        tfrecord_path = self.tfrecord_path
+        image_path = self.image_path
+        assert tfrecord_path is not None or image_path is not None
+
+        if tfrecord_path is not None:
+            print('Building item dataset from TFRecords ...', end='')
+            dataset = tf.data.TFRecordDataset(
+                tfrecord_path, num_parallel_reads=autotune
+            ).map(self._parse_item_tfrecord, autotune).batch(batch_size)
+            print('Done.')
+        else:
+            print('Building item dataset from image files ...', end='')
+            info = tf.data.Dataset.from_tensor_slices(self.info_data)
+            desc = tf.data.Dataset.from_tensor_slices(self.desc_data)
+            image = tf.data.Dataset.from_tensor_slices(image_path).map(self._read_image, autotune)
+            dataset = tf.data.Dataset.zip((info, desc, image)).map(self._process_item).batch(batch_size)
+            print('Done.')
 
         return dataset
 
@@ -424,24 +421,21 @@ class RecData(object):
 
         return image
 
-    def _process_train(self, inputs):
+    def _process_train(self, *inputs):
         """ Train images are 2D image path 
         """
-        def _pad_image():
-            return tf.zeros((self.config.image_height, self.config.image_width, 3), dtype=tf.float32)
-
-        def _get_image(img):
-            return tf.cond(tf.not_equal(img, ''), lambda: self._read_image(img), _pad_image)
-
-        image_path = inputs.pop('image_path', None)
-        if image_path is not None:
-            inputs['image'] = tf.map_fn(_get_image, image_path, dtype=tf.float32)
-            inputs['image'].set_shape(
-                (self.config.max_history_length, self.config.image_height, self.config.image_width, 3))
-
+        profile, context, info, desc, image = inputs
+        inputs = {
+            'profile': profile,
+            'context': context,
+            'info': info,
+            'desc': desc,
+            'image': image
+        }
         return inputs
 
-    def _process_tfrecord(self, profile, context, item):
+    def _process_tfrecord(self, *inputs):
+        profile, context, item = inputs
         inputs = {
             'profile': profile,
             'context': context,
@@ -450,6 +444,14 @@ class RecData(object):
             'info': item['info']
         }
         return inputs
+
+    def _process_item(self, *inputs):
+        info, desc, image = inputs
+        return {
+            'info': info,
+            'desc': desc,
+            'image': image
+        }
 
     def _process_infer(self, inputs):
         """ Infer images are list of image path 
