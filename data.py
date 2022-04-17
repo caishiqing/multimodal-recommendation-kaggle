@@ -227,6 +227,12 @@ class RecData(object):
         padding['id'] = 'padding'
         padding['info'] = (0,) * len(self.item_feature_dict)
         padding['desc'] = (0,) * self.config.max_desc_length
+        if 'tfrecord' in self.items:
+            tfrecord_dir = os.path.split(self.items['tfrecord'][0])[0]
+            padding['tfrecord'] = os.path.join(tfrecord_dir, 'padding.tfrecord')
+        if 'image' in self.items:
+            image_dir = os.path.split(self.items['image'][0])[0]
+            padding['image'] = os.path.join(tfrecord_dir, 'padding.image')
         self.items.loc[-1] = padding
 
         # pad users
