@@ -348,6 +348,7 @@ class RecData(object):
         self._display_feature_info()
 
     def train_dataset(self, batch_size: int = 8):
+        assert self._processed and self._padded
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             self.train_wrapper.trans_indices, maxlen=self.config.max_history_length,
             padding='pre', truncating='pre', value=-1
@@ -390,6 +391,7 @@ class RecData(object):
         return dataset
 
     def item_dataset(self, batch_size: int = 32):
+        assert self._processed and self._padded
         autotune = tf.data.experimental.AUTOTUNE
         tfrecord_path = self.tfrecord_path
         image_path = self.image_path
