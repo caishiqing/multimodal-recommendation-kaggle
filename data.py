@@ -89,14 +89,6 @@ class RecData(object):
         if image_dir is not None:
             self.items['image'] = self.items['id'].apply(lambda x: os.path.join(image_dir, str(x)+'.jpg'))
 
-    @property
-    def include_image(self):
-        return 'image' in self.items or 'image_path' in self.items
-
-    @property
-    def include_desc(self):
-        return 'desc' in self.items
-
     def prepare_features(self, tokenizer: BertTokenizer = None, padding_desc=False):
         if not self._processed:
             self._process_item_features(tokenizer, padding_desc)
@@ -220,6 +212,14 @@ class RecData(object):
             size.append(len(feat_map))
 
         return size
+
+    @property
+    def include_image(self):
+        return 'image' in self.items or 'image_path' in self.items
+
+    @property
+    def include_desc(self):
+        return 'desc' in self.items
 
     def padding(self):
         # pad items

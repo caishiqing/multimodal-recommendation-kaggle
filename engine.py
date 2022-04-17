@@ -97,6 +97,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
     def on_epoch_end(self, epoch, logs):
         user_test_wrapper = self.data.test_wrapper
         profile = self.data.profile_data
+        context = self.data.context_data
 
         item_vectors = []
         with tqdm(total=len(self.data.items) // self.batch_size, desc='Compute items') as pbar:
@@ -118,20 +119,17 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                 trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
                     trans_indices, maxlen=self.max_history_length, value=-1
                 ).reshape([-1])
-                context = np.asarray(
-                    self.data.trans['context'][trans_indices].to_list(),
-                    dtype=np.int32
-                ).reshape([j-i, self.max_history_length, -1])
-                items = item_vectors[trans_indices].reshape([j-i, self.max_history_length, -1])
-                user_vectors = self.model.user_model.predict(
+                batch_context = context[trans_indices].reshape([j-i, self.max_history_length, -1])
+                batch_items = item_vectors[trans_indices].reshape([j-i, self.max_history_length, -1])
+                batch_user_vectors = self.model.user_model.predict(
                     {
                         'profile': batch_profile,
-                        'context': context,
-                        'items': items
+                        'context': batch_context,
+                        'items': batch_items
                     }
                 )
                 # Apply dot similarity
-                score = np.matmul(user_vectors, item_vectors.T)
+                score = np.matmul(batch_user_vectors, item_vectors.T)
                 # Exclude interacted items in history
                 for i, gt in enumerate(user_test_wrapper.ground_truth[i:j]):
                     score[i, gt] -= 1e-5
