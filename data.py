@@ -81,8 +81,6 @@ class RecData(object):
         else:
             self._learn_feature_dict()
 
-        self.padding()
-
         # add tfrecord path column to item
         if tfrecord_dir is not None:
             self.items['tfrecord'] = self.items['id'].apply(lambda x: os.path.join(tfrecord_dir, str(x)+'.tfrecord'))
@@ -105,6 +103,7 @@ class RecData(object):
             self._process_user_features()
             self._process_transaction_features()
             self._processed = True
+            self.padding()
         else:
             print("Features are aleady prepared.")
 
