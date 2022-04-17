@@ -71,6 +71,65 @@ class RecEngine:
         )
         rec_model.fit(dataset, epochs=kwargs.get('epochs', 10), callbacks=[checkpoint])
 
+    def infer(self, data: RecData, batch_size: int = 128, top_k=10):
+        assert data._padded
+        item_vectors = []
+        with tqdm(total=len(data.items)//batch_size, desc='Computing items') as pbar:
+            for data in data.train_dataset(batch_size):
+                pbar.update()
+                item_vectors.append(self.item_model(data).numpy())
+
+        item_vectors = np.vstack(item_vectors)
+        item_vectors[-1] *= 0  # for padding
+        user_vectors = self.user_model.infer_initial_state(
+            data.profile_data, batch_size=batch_size)
+
+        infer_wrapper = data.infer_wrapper
+        context = data.context_data
+        with tqdm(total=len(infer_wrapper)//batch_size, desc='Computing users') as pbar:
+            for i in range(0, len(infer_wrapper), batch_size):
+                pbar.update()
+                j = min(i + self.batch_size, len(infer_wrapper))
+                user_indices = infer_wrapper.user_indices[i:j]
+                trans_indices = infer_wrapper.trans_indices[i:j]
+                trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
+                    trans_indices, maxlen=self.config['max_history_length'], value=-1
+                ).reshape([-1])
+                item_indices = self.data.trans['item'][trans_indices]
+                batch_context = context[trans_indices].reshape([j-i, self.max_history_length, -1])
+                batch_item_vectors = item_vectors[item_indices].reshape([j-i, self.max_history_length, -1])
+                batch_init_state = user_vectors[user_indices]
+                batch_user_vectors = self.model.user_model.predict(
+                    {
+                        'init_state': batch_init_state,
+                        'context': batch_context,
+                        'items': batch_item_vectors
+                    }
+                )
+                # update user state vectors
+                user_vectors[user_indices] = batch_user_vectors
+
+            predictions = []
+            for i in range(0, len(data.users), batch_size):
+                j = min(i + self.batch_size, len(data.users))
+                batch_user_vectors = user_vectors[i:j]
+                # Apply dot similarity
+                score = np.matmul(batch_user_vectors, item_vectors[:-1].T)
+                # Exclude interacted items in history
+                for user_indice in range(i, j):
+                    if user_indice not in infer_wrapper.index:
+                        continue
+                    k = infer_wrapper.index[user_indice]
+                    trans_indices = infer_wrapper.trans_indices[k]
+                    used_items = data.trans['item'][trans_indices]
+                    score[i, used_items] -= 1e-5
+
+                # Cut off topk most related items
+                predictions.append(np.argsort(-score, axis=1)[:top_k])
+
+            predictions = np.vstack(predictions)
+            return item_vectors, user_vectors, predictions
+
 
 class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
     def __init__(self, filepath: str,
@@ -119,20 +178,21 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                 trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
                     trans_indices, maxlen=self.max_history_length, value=-1
                 ).reshape([-1])
+                item_indices = self.data.trans['item'][trans_indices]
                 batch_context = context[trans_indices].reshape([j-i, self.max_history_length, -1])
-                batch_items = item_vectors[trans_indices].reshape([j-i, self.max_history_length, -1])
+                batch_item_vectors = item_vectors[item_indices].reshape([j-i, self.max_history_length, -1])
                 batch_user_vectors = self.model.user_model.predict(
                     {
                         'profile': batch_profile,
                         'context': batch_context,
-                        'items': batch_items
+                        'items': batch_item_vectors
                     }
                 )
                 # Apply dot similarity
                 score = np.matmul(batch_user_vectors, item_vectors.T)
                 # Exclude interacted items in history
-                for i, gt in enumerate(user_test_wrapper.ground_truth[i:j]):
-                    score[i, gt] -= 1e-5
+                for i, used_items in enumerate(item_indices.reshape([-1, self.max_history_length])):
+                    score[i, used_items] -= 1e-5
 
                 # Cut off topk most related items
                 predictions.append(np.argsort(-score, axis=-1)[:, :self.top_k])

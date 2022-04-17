@@ -13,15 +13,32 @@ class DataWrapper(object):
         self.user_indices = []
         self.trans_indices = []
         self.ground_truth = []
+        self.index = dict()
 
     def append(self, user_indice: int,
                trans_indices: List[int],
                ground_truth_indices: List[int] = None):
 
+        assert (user_indice not in self.index,
+                f'UserIndice {user_indice} is already in, please use `set_value` function!')
+
         self.user_indices.append(user_indice)
         self.trans_indices.append(trans_indices)
         if ground_truth_indices is not None:
             self.ground_truth.append(ground_truth_indices)
+
+        self.index[user_indice] = len(self) - 1
+
+    def set_value(self,
+                  user_indice: int,
+                  trans_indices: List[int],
+                  ground_truth: List[int] = None):
+
+        index = self.index[user_indice]
+        self.user_indices[index] = user_indice
+        self.trans_indices[index] = trans_indices
+        if ground_truth is not None:
+            self.ground_truth[index] = ground_truth
 
     def shuffle(self):
         indices = list(range(len(self)))
@@ -188,6 +205,18 @@ class RecData(object):
             wrapper.append(user_idx, trans_indices)
 
         return wrapper
+
+    # @property
+    # def infer_wrapper(self):
+    #     wrapper = DataWrapper()
+    #     for i in self.users.index:
+    #         wrapper.append(i, [])
+
+    #     for user_indice, df in self.trans.groupby('user'):
+    #         trans_indices = df.index.to_list()
+    #         wrapper.set_value(user_indice, trans_indices)
+
+    #     return wrapper
 
     @property
     def info_size(self):
