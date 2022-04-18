@@ -110,7 +110,7 @@ class RecData(object):
             print('Process item features ...', end='')
             info = []
             for key, feat_map in self.item_feature_dict.items():
-                info.append(self.items[key].map(feat_map))
+                info.append(self.items[key].map(lambda x: feat_map.get(x, 0)))
                 del self.items[key]
 
             self.items['info'] = list(zip(*info))
@@ -131,7 +131,7 @@ class RecData(object):
             print('Process user features ...', end='')
             profile = []
             for key, feat_map in self.user_feature_dict.items():
-                profile.append(self.users[key].map(feat_map))
+                profile.append(self.users[key].map(lambda x: feat_map.get(x, 0)))
                 del self.users[key]
 
             self.users['profile'] = list(zip(*profile))
@@ -140,7 +140,7 @@ class RecData(object):
             print('Process transaction features ...', end='')
             context = []
             for key, feat_map in self.trans_feature_dict.items():
-                context.append(self.trans[key].map(feat_map))
+                context.append(self.trans[key].map(lambda x: feat_map.get(x, 0)))
                 del self.trans[key]
 
             self.trans['context'] = list(zip(*context))
@@ -371,11 +371,11 @@ class RecData(object):
     def load_feature_dict(self, load_dir: str):
         # Load feature dict from direction
         with open(os.path.join(load_dir, 'item_feature_dict.json'), 'r', encoding='utf8') as fp:
-            self.item_feature_dict = json.load(fp)
+            self.item_feature_dict = OrderedDict(json.load(fp))
         with open(os.path.join(load_dir, 'user_feature_dict.json'), 'r', encoding='utf8') as fp:
-            self.user_feature_dict = json.load(fp)
+            self.user_feature_dict = OrderedDict(json.load(fp))
         with open(os.path.join(load_dir, 'trans_feature_dict.json'), 'r', encoding='utf8') as fp:
-            self.trans_feature_dict = json.load(fp)
+            self.trans_feature_dict = OrderedDict(json.load(fp))
         self._display_feature_info()
 
     def train_dataset(self, batch_size: int = 8):
