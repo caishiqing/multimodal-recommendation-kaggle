@@ -259,7 +259,7 @@ class RecData(object):
             padding['tfrecord'] = os.path.join(tfrecord_dir, 'padding.tfrecord')
         if 'image' in self.items:
             image_dir = os.path.split(self.items['image'][0])[0]
-            padding['image'] = os.path.join(tfrecord_dir, 'padding.image')
+            padding['image'] = os.path.join(image_dir, 'padding.image')
         self.items.loc[-1] = padding
 
         # pad users
