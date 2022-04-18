@@ -387,9 +387,9 @@ class RecData(object):
         item_indices = self.trans.iloc[trans_indices]['item']
 
         profile = tf.data.Dataset.from_tensor_slices(
-            self.profile_data[self.train_wrapper.user_indices]).unbatch()
+            self.profile_data[self.train_wrapper.user_indices])
         context = tf.data.Dataset.from_tensor_slices(
-            self.context_data[trans_indices]).unbatch().batch(self.config.max_history_length)
+            self.context_data[trans_indices]).batch(self.config.max_history_length)
 
         tfrecord_path = self.tfrecord_path
         image_path = self.image_path
@@ -401,20 +401,19 @@ class RecData(object):
             item_record_paths = tfrecord_path[item_indices]
             item = tf.data.TFRecordDataset(
                 item_record_paths, num_parallel_reads=autotune
-            ).map(self._parse_item_tfrecord, autotune).unbatch().batch(self.config.max_history_length)
+            ).map(self._parse_item_tfrecord, autotune).batch(self.config.max_history_length)
 
             dataset = tf.data.Dataset.zip((profile, context, item)).map(
                 self._process_tfrecord).shuffle(2*batch_size).batch(batch_size)
             print('Done.')
         else:
             print('Building dataset with items from image files ...', end='')
-            item_image_paths = image_path[item_indices]
             info = tf.data.Dataset.from_tensor_slices(
-                self.info_data[item_indices]).unbatch().batch(self.config.max_history_length)
+                self.info_data[item_indices]).batch(self.config.max_history_length)
             desc = tf.data.Dataset.from_tensor_slices(
-                self.desc_data[item_indices]).unbatch().batch(self.config.max_history_length)
+                self.desc_data[item_indices]).batch(self.config.max_history_length)
             image = tf.data.Dataset.from_tensor_slices(
-                item_image_paths).map(self._read_image, autotune).unbatch().batch(self.config.max_history_length)
+                image_path[item_indices]).map(self._read_image, autotune).batch(self.config.max_history_length)
             dataset = tf.data.Dataset.zip((profile, context, info, desc, image)).map(
                 self._process_train).shuffle(2*batch_size).batch(batch_size)
             print('Done!')
