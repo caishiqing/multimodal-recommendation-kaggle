@@ -116,8 +116,6 @@ class RecData(object):
         else:
             print("Features are aleady prepared.")
 
-        self._display_feature_info()
-
     def prepare_train(self, test_users: list = None):
         if test_users is not None:
             test_users = [self.user_index_map[user] for user in test_users]
@@ -345,6 +343,8 @@ class RecData(object):
             self.trans_feature_dict[col] = OrderedDict(
                 [(val, i) for i, val in enumerate(sorted(vals))])
 
+        self._display_feature_info()
+
     def _display_feature_info(self):
         info = []
         for feat, feat_map in self.item_feature_dict.items():
@@ -501,6 +501,8 @@ class RecData(object):
 
     def _parse_item_tfrecord(self, item_tfrecord_proto):
         example = tf.io.parse_single_example(item_tfrecord_proto, self.item_schema)
+        example['info'] = tf.cast(example['info'], tf.int32)
+        example['desc'] = tf.cast(example['desc'], tf.int32)
         example['image'] = self._decode_image(example['image'])
         return example
 
