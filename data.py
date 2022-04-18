@@ -2,6 +2,7 @@ from transformers import BertTokenizer, BertConfig
 from collections import OrderedDict, namedtuple
 from typing import List, Union
 import tensorflow as tf
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import json
@@ -75,8 +76,6 @@ class RecData(object):
         self.trans_feature_dict = OrderedDict()
         self.train_wrapper = DataWrapper()
         self.test_wrapper = DataWrapper()
-        self._padded = False
-        self._processed = False
 
         self.config = build_config(config)
         self.resize_image = resize_image
@@ -108,42 +107,85 @@ class RecData(object):
 
     def prepare_features(self, tokenizer: BertTokenizer = None, padding_desc=False):
         if not self._processed:
-            self._process_item_features(tokenizer, padding_desc)
-            self._process_user_features()
-            self._process_transaction_features()
-            self._processed = True
+            print('Process item features ...', end='')
+            info = []
+            for key, feat_map in self.item_feature_dict.items():
+                info.append(self.items[key].map(feat_map))
+                del self.items[key]
+
+            self.items['info'] = list(zip(*info))
+            if 'desc' in self.items and tokenizer is not None:
+                # Wether or not to tokenize items' descriptions
+                self.items['desc'] = tokenizer(
+                    self.items['desc'].to_list(),
+                    max_length=self.config.max_desc_length,
+                    truncation=True,
+                    padding=padding_desc,
+                    return_attention_mask=False,
+                    return_token_type_ids=False
+                )['input_ids']
+            print('Done!')
+
+            print('Process user features ...', end='')
+            profile = []
+            for key, feat_map in self.user_feature_dict.items():
+                profile.append(self.users[key].map(feat_map))
+                del self.users[key]
+
+            self.users['profile'] = list(zip(*profile))
+            print('Done!')
+
+            print('Process transaction features ...', end='')
+            context = []
+            for key, feat_map in self.trans_feature_dict.items():
+                context.append(self.trans[key].map(feat_map))
+                del self.trans[key]
+
+            self.trans['context'] = list(zip(*context))
+            print('Done!')
+
             self.padding()
         else:
             print("Features are aleady prepared.")
+
+    @property
+    def _processed(self):
+        flag = 'profile' in self.users
+        flag &= 'info' in self.items
+        flag &= 'context' in self.trans
+        flag &= isinstance(self.items['desc'][0], list)
+        return flag
 
     def prepare_train(self, test_users: list = None):
         if test_users is not None:
             test_users = [self.user_index_map[user] for user in test_users]
             test_users = set(test_users)
 
-        for user_idx, df in self.trans.groupby('user'):
-            trans_indices = df.index.to_list()
-            item_indices = df['item'].to_list()
-            if len(trans_indices) < self.config.max_history_length or (test_users is not None and user_idx in test_users):
-                # test sample
-                if len(trans_indices) == 1:
-                    # no transactions, only use profile
-                    self.test_wrapper.append(user_idx, [], item_indices)
-                elif len(df) < self.config.top_k:
-                    self.test_wrapper.append(user_idx, trans_indices[:1], item_indices[1:])
+        with tqdm(total=len(self.trans['user'].unique()), desc='Process training data') as pbar:
+            for user_idx, df in self.trans.groupby('user'):
+                pbar.update()
+                trans_indices = df.index.to_list()
+                item_indices = df['item'].to_list()
+                if len(trans_indices) < self.config.max_history_length or (test_users is not None and user_idx in test_users):
+                    # test sample
+                    if len(trans_indices) == 1:
+                        # no transactions, only use profile
+                        self.test_wrapper.append(user_idx, [], item_indices)
+                    elif len(df) < self.config.top_k:
+                        self.test_wrapper.append(user_idx, trans_indices[:1], item_indices[1:])
+                    else:
+                        self.test_wrapper.append(
+                            user_idx,
+                            trans_indices[:-self.config.top_k],
+                            item_indices[-self.config.top_k:]
+                        )
                 else:
-                    self.test_wrapper.append(
-                        user_idx,
-                        trans_indices[:-self.config.top_k],
-                        item_indices[-self.config.top_k:]
-                    )
-            else:
-                # train sample
-                cut_offset = max(len(trans_indices)-self.config.top_k, self.config.max_history_length)
-                self.train_wrapper.append(user_idx, trans_indices[:cut_offset])
-                if cut_offset < len(trans_indices):
-                    # cut off for test
-                    self.test_wrapper.append(user_idx, trans_indices[:cut_offset], item_indices[cut_offset:])
+                    # train sample
+                    cut_offset = max(len(trans_indices)-self.config.top_k, self.config.max_history_length)
+                    self.train_wrapper.append(user_idx, trans_indices[:cut_offset])
+                    if cut_offset < len(trans_indices):
+                        # cut off for test
+                        self.test_wrapper.append(user_idx, trans_indices[:cut_offset], item_indices[cut_offset:])
 
         # shuffle train samples
         self.train_wrapper.shuffle()
@@ -275,51 +317,9 @@ class RecData(object):
         padding['user'] = -1
         self.trans.loc[-1] = padding
 
-        self._padded = True
-
-    def _process_item_features(self,
-                               tokenizer: BertTokenizer = None,
-                               padding_desc=False):
-
-        print('Process item features ...', end='')
-        info = []
-        for key, feat_map in self.item_feature_dict.items():
-            info.append(self.items[key].map(feat_map))
-            del self.items[key]
-
-        self.items['info'] = list(zip(*info))
-        if 'desc' in self.items and tokenizer is not None:
-            # Wether or not to tokenize items' descriptions
-            self.items['desc'] = tokenizer(
-                self.items['desc'].to_list(),
-                max_length=self.config.max_desc_length,
-                truncation=True,
-                padding=padding_desc,
-                return_attention_mask=False,
-                return_token_type_ids=False
-            )['input_ids']
-
-        print('Done!')
-
-    def _process_user_features(self):
-        print('Process user features ...', end='')
-        profile = []
-        for key, feat_map in self.user_feature_dict.items():
-            profile.append(self.users[key].map(feat_map))
-            del self.users[key]
-
-        self.users['profile'] = list(zip(*profile))
-        print('Done!')
-
-    def _process_transaction_features(self):
-        print('Process transaction features ...', end='')
-        context = []
-        for key, feat_map in self.trans_feature_dict.items():
-            context.append(self.trans[key].map(feat_map))
-            del self.trans[key]
-
-        self.trans['context'] = list(zip(*context))
-        print('Done!')
+    @property
+    def _padded(self):
+        return -1 in self.items.index and -1 in self.users.index and -1 in self.trans.index
 
     def _learn_feature_dict(self):
         for col in self.items.columns:
