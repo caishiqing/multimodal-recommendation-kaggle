@@ -445,6 +445,9 @@ class RecData(object):
     def _decode_image(self, img_bytes):
         image = tf.image.decode_image(img_bytes, expand_animations=False)
         image = tf.image.convert_image_dtype(image, tf.float32)
+        if not self.resize_image:
+            image.set_shape([self.config.image_height, self.config.image_width, 3])
+
         return image
 
     def _read_image(self, img_path):
