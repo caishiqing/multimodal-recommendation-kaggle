@@ -124,6 +124,8 @@ class RecData(object):
                     return_attention_mask=False,
                     return_token_type_ids=False
                 )['input_ids']
+            elif 'desc' in self.items:
+                del self.items['desc']
             print('Done!')
 
             print('Process user features ...', end='')
@@ -153,7 +155,7 @@ class RecData(object):
         flag = 'profile' in self.users
         flag &= 'info' in self.items
         flag &= 'context' in self.trans
-        flag &= isinstance(self.items['desc'][0], list)
+        flag &= not self.include_desc or isinstance(self.items['desc'][0], list)
         return flag
 
     def prepare_train(self, test_users: list = None):
