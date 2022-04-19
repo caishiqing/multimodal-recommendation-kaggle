@@ -63,6 +63,8 @@ class RecEngine:
             margin=kwargs.get('margin', 0.0),
             gamma=kwargs.get('gamma', 1.0)
         )
+        self.item_model.summary()
+        self.user_model.summary()
 
         # Build checkpoint and train model
         top_k = self.config.get('top_k', 12)

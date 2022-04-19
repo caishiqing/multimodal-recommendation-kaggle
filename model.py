@@ -236,7 +236,8 @@ class RecModel(tf.keras.Model):
             )
             mask = tf.cast(tf.not_equal(item_indices, -1), item_vectors.dtype)
             item_vectors *= tf.expand_dims(mask, -1)
-            item_vectors = tf.reshape(item_vectors, [-1, self.config.max_history_length, self.config.embed_dim])
+            item_vectors = tf.reshape(
+                item_vectors, [-1, self.config['max_history_length'], self.config['embed_dim']])
 
             # compute user vectors
             state_seq, _ = self.user_model(
