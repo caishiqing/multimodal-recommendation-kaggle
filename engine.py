@@ -39,7 +39,10 @@ class RecEngine:
         data.prepare_features(self.tokenizer)
         data.prepare_train(test_users)
         dataset = data.train_dataset(batch_size)
-        rec_model = RecModel(self.config, self.item_model, self.user_model)
+        rec_model = RecModel(self.config,
+                             self.item_model,
+                             self.user_model,
+                             data.item_data)
 
         # Save files related to model
         model_config = BertConfig.from_pretrained(self.config.get('bert_path', 'bert-base-uncased'))
