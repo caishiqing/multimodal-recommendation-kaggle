@@ -101,9 +101,13 @@ class RecData(object):
         if tfrecord_dir is not None:
             self.items['tfrecord'] = self.items['id'].apply(lambda x: os.path.join(tfrecord_dir, str(x)+'.tfrecord'))
 
-        # add image path to item
+        # add image bytes to item
         if image_dir is not None:
-            self.items['image'] = self.items['id'].apply(lambda x: os.path.join(image_dir, str(x)+'.jpg'))
+            autotune = tf.data.experimental.AUTOTUNE
+            image_dataset = tf.data.Dataset.from_tensor_slices(
+                self.items['id'].apply(lambda x: os.path.join(image_dir, str(x)+'.jpg'))
+            ).map(tf.io.read_file, autotune).batch(len(self.items))
+            self.items['image'] = list(image_dataset)[0].numpy()
 
     def prepare_features(self, tokenizer: BertTokenizer = None, padding_desc=False):
         if not self._processed:
@@ -216,7 +220,7 @@ class RecData(object):
         return np.asarray(self.items['info'].to_list(), np.int32)
 
     @property
-    def image_path(self):
+    def image_data(self):
         if not self.include_image:
             return None
 
@@ -240,6 +244,15 @@ class RecData(object):
         return np.asarray(self.trans['context'].to_list(), dtype=np.int32)
 
     @property
+    def item_data(self):
+        data = {
+            'info': self.info_data,
+            'desc': self.desc_data,
+            'image': self.image_data
+        }
+        return data
+
+    @property
     def infer_wrapper(self):
         wrapper = DataWrapper()
         for user_idx, df in self.trans.groupby('user'):
@@ -247,18 +260,6 @@ class RecData(object):
             wrapper.append(user_idx, trans_indices)
 
         return wrapper
-
-    # @property
-    # def infer_wrapper(self):
-    #     wrapper = DataWrapper()
-    #     for i in self.users.index:
-    #         wrapper.append(i, [])
-
-    #     for user_indice, df in self.trans.groupby('user'):
-    #         trans_indices = df.index.to_list()
-    #         wrapper.set_value(user_indice, trans_indices)
-
-    #     return wrapper
 
     @property
     def info_size(self):
@@ -302,8 +303,9 @@ class RecData(object):
             tfrecord_dir = os.path.split(self.items['tfrecord'][0])[0]
             padding['tfrecord'] = os.path.join(tfrecord_dir, 'padding.tfrecord')
         if 'image' in self.items:
-            image_dir = os.path.split(self.items['image'][0])[0]
-            padding['image'] = os.path.join(image_dir, 'padding.image')
+            pad_image = np.zeros((self.config.image_height, self.config.image_width, 3), np.uint8)
+            pad_image = tf.image.encode_jpeg(tf.constant(pad_image)).numpy()
+            padding['image'] = pad_image
         self.items.loc[-1] = padding
 
         # pad users
@@ -359,25 +361,6 @@ class RecData(object):
         info = pd.DataFrame(info, index=None)
         print(info)
 
-    def save_feature_dict(self, save_dir: str):
-        # Save feature dict to direction
-        with open(os.path.join(save_dir, 'item_feature_dict.json'), 'w', encoding='utf8') as fp:
-            json.dump(self.item_feature_dict, fp)
-        with open(os.path.join(save_dir, 'user_feature_dict.json'), 'w', encoding='utf8') as fp:
-            json.dump(self.user_feature_dict, fp)
-        with open(os.path.join(save_dir, 'trans_feature_dict.json'), 'w', encoding='utf8') as fp:
-            json.dump(self.trans_feature_dict, fp)
-
-    def load_feature_dict(self, load_dir: str):
-        # Load feature dict from direction
-        with open(os.path.join(load_dir, 'item_feature_dict.json'), 'r', encoding='utf8') as fp:
-            self.item_feature_dict = OrderedDict(json.load(fp))
-        with open(os.path.join(load_dir, 'user_feature_dict.json'), 'r', encoding='utf8') as fp:
-            self.user_feature_dict = OrderedDict(json.load(fp))
-        with open(os.path.join(load_dir, 'trans_feature_dict.json'), 'r', encoding='utf8') as fp:
-            self.trans_feature_dict = OrderedDict(json.load(fp))
-        self._display_feature_info()
-
     def train_dataset(self, batch_size: int = 8):
         assert self._processed and self._padded
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
@@ -386,37 +369,18 @@ class RecData(object):
         ).reshape([-1])
         item_indices = self.trans.iloc[trans_indices]['item']
 
-        profile = tf.data.Dataset.from_tensor_slices(
-            self.profile_data[self.train_wrapper.user_indices])
-        context = tf.data.Dataset.from_tensor_slices(
-            self.context_data[trans_indices]).batch(self.config.max_history_length)
+        profile = self.profile_data[self.train_wrapper.user_indices]
+        context = self.context_data[trans_indices].reshape(
+            [-1, self.config.max_history_length, len(self.context_size)])
+        items = np.asarray(item_indices, np.int32).reshape([-1, self.config.max_history_length])
 
-        tfrecord_path = self.tfrecord_path
-        image_path = self.image_path
-        assert tfrecord_path is not None or image_path is not None
-
-        autotune = tf.data.experimental.AUTOTUNE
-        if tfrecord_path is not None:
-            print('Building dataset with items from TFRecords ...', end='')
-            item_record_paths = tfrecord_path[item_indices]
-            item = tf.data.TFRecordDataset(
-                item_record_paths, num_parallel_reads=autotune
-            ).map(self._parse_item_tfrecord, autotune).batch(self.config.max_history_length)
-
-            dataset = tf.data.Dataset.zip((profile, context, item)).map(
-                self._process_tfrecord).shuffle(2*batch_size).batch(batch_size)
-            print('Done.')
-        else:
-            print('Building dataset with items from image files ...', end='')
-            info = tf.data.Dataset.from_tensor_slices(
-                self.info_data[item_indices]).batch(self.config.max_history_length)
-            desc = tf.data.Dataset.from_tensor_slices(
-                self.desc_data[item_indices]).batch(self.config.max_history_length)
-            image = tf.data.Dataset.from_tensor_slices(
-                image_path[item_indices]).map(self._read_image, autotune).batch(self.config.max_history_length)
-            dataset = tf.data.Dataset.zip((profile, context, info, desc, image)).map(
-                self._process_train).shuffle(2*batch_size).batch(batch_size)
-            print('Done!')
+        dataset = tf.data.Dataset.from_tensor_slices(
+            {
+                'profile': profile,
+                'context': context,
+                'items': items
+            }
+        ).shuffle(2*batch_size).batch(batch_size)
 
         return dataset
 
@@ -518,6 +482,25 @@ class RecData(object):
             'image': tf.io.FixedLenFeature([], tf.string),
         }
         return schema
+
+    def save_feature_dict(self, save_dir: str):
+        # Save feature dict to direction
+        with open(os.path.join(save_dir, 'item_feature_dict.json'), 'w', encoding='utf8') as fp:
+            json.dump(self.item_feature_dict, fp)
+        with open(os.path.join(save_dir, 'user_feature_dict.json'), 'w', encoding='utf8') as fp:
+            json.dump(self.user_feature_dict, fp)
+        with open(os.path.join(save_dir, 'trans_feature_dict.json'), 'w', encoding='utf8') as fp:
+            json.dump(self.trans_feature_dict, fp)
+
+    def load_feature_dict(self, load_dir: str):
+        # Load feature dict from direction
+        with open(os.path.join(load_dir, 'item_feature_dict.json'), 'r', encoding='utf8') as fp:
+            self.item_feature_dict = OrderedDict(json.load(fp))
+        with open(os.path.join(load_dir, 'user_feature_dict.json'), 'r', encoding='utf8') as fp:
+            self.user_feature_dict = OrderedDict(json.load(fp))
+        with open(os.path.join(load_dir, 'trans_feature_dict.json'), 'r', encoding='utf8') as fp:
+            self.trans_feature_dict = OrderedDict(json.load(fp))
+        self._display_feature_info()
 
 
 def build_config(config):

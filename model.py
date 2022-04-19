@@ -53,11 +53,12 @@ class Image(layers.Layer):
         self.mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
         self.std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
 
-    def _normalize(self, img):
-        return (img-self.mean)/self.std
+    def _preprocess(self, img):
+        x = tf.cast(img, tf.float32)/256
+        return (x-self.mean)/self.std
 
     def call(self, img, training=None):
-        x = self._normalize(img)
+        x = self._preprocess(img)
         x = self.backbone(x, training=training)
         return self.dense(x)
 
@@ -130,37 +131,6 @@ class Item(tf.keras.Model):
         return input_shape[0], self.embed_dim
 
 
-class Items(tf.keras.Model):
-    """ 商品序列模型 """
-
-    def __init__(self, item_model, **kwargs):
-        super(Items, self).__init__(**kwargs)
-        self.item_model = item_model
-        self.image_model = layers.TimeDistributed(item_model.image_model)
-        self.desc_model = layers.TimeDistributed(item_model.desc_model)
-        self.info_model = layers.TimeDistributed(item_model.info_model)
-        self.ln = layers.TimeDistributed(item_model.ln)
-        self.dense = layers.TimeDistributed(item_model.dense)
-        self.supports_masking = True
-
-    def call(self, inputs, training=None, mask=None):
-        img_embed = self.image_model(inputs['image'], training=training)
-        desc_embed = self.desc_model(inputs['desc'], training=training)
-        info_embed = self.info_model(inputs['info'])
-        x = layers.Add()([img_embed, desc_embed, info_embed])
-        x = self.ln(x)
-        x = self.dense(x)
-
-        if mask is not None:
-            m = tf.expand_dims(tf.cast(mask, x.dtype), -1)
-            x *= m
-
-        return x
-
-    def compute_mask(self, inputs, mask=None):
-        return tf.reduce_any(tf.not_equal(inputs['desc'], 0), axis=-1)
-
-
 class User(tf.keras.Model):
     """ 用户模型 """
 
@@ -229,12 +199,20 @@ def build_model(config):
 class RecModel(tf.keras.Model):
     """ Recommendation Model for Training """
 
-    def __init__(self, config, item_model, user_model, **kwargs):
+    def __init__(self, config, item_model, user_model, item_data, **kwargs):
         super(RecModel, self).__init__(**kwargs)
         self.config = config
         self.item_model = item_model
-        self.items_model = Items(self.item_model, name='Items')
         self.user_model = user_model
+
+        autotune = tf.data.experimental.AUTOTUNE
+        self.item_data = {
+            'info': tf.constant(item_data['info'], tf.int32),
+            'desc': tf.constant(item_data['desc'], tf.int32),
+            'image': list(tf.data.Dataset.from_tensor_slices(
+                item_data['image']).map(tf.image.decode_image, autotune).batch(len(item_data['image']))
+            )[0]
+        }
 
     def compile(self, optimizer, margin=0.0, gamma=1.0):
         super(RecModel, self).compile(optimizer=optimizer)
@@ -246,7 +224,21 @@ class RecModel(tf.keras.Model):
     @tf.function
     def train_step(self, inputs):
         with tf.GradientTape(persistent=True) as tape:
-            item_vectors = self.items_model(inputs, training=True)
+            # compute item vectors
+            item_indices = tf.reshape(inputs['items'], [-1])
+            item_vectors = self.item_model(
+                {
+                    'info': tf.gather(self.item_data['info'], item_indices),
+                    'desc': tf.gather(self.item_data['desc'], item_indices),
+                    'image': tf.gather(self.item_data['image'], item_indices)
+                },
+                training=True
+            )
+            mask = tf.cast(tf.not_equal(item_indices, -1), item_vectors.dtype)
+            item_vectors *= tf.expand_dims(mask, -1)
+            item_vectors = tf.reshape(item_vectors, [-1, self.config.max_history_length, self.config.embed_dim])
+
+            # compute user vectors
             state_seq, _ = self.user_model(
                 {
                     'profile': inputs['profile'],
