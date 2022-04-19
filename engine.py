@@ -163,9 +163,10 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
 
         item_vectors = []
         with tqdm(total=len(self.data.items) // self.batch_size, desc='Compute items') as pbar:
-            for batch_inputs in self.data.item_dataset(self.batch_size):
+            item_dataset = tf.data.Dataset.from_tensor_slices(self.model.item_data).batch(self.batch_size)
+            for data in item_dataset:
                 pbar.update()
-                batch_vector = self.model.item_model(batch_inputs).numpy()
+                batch_vector = self.model.item_model(data).numpy()
                 item_vectors.append(batch_vector)
 
         item_vectors = np.vstack(item_vectors)
