@@ -224,6 +224,8 @@ class RecModel(tf.keras.Model):
     @tf.function
     def train_step(self, inputs):
         with tf.GradientTape(persistent=True) as tape:
+            batch_size = tf.shape(inputs['items'])[0]
+            seq_length = tf.shape(inputs['items'])[1]
             # compute item vectors
             item_indices = tf.reshape(inputs['items'], [-1])
             item_vectors = self.item_model(
@@ -236,8 +238,7 @@ class RecModel(tf.keras.Model):
             )
             mask = tf.cast(tf.not_equal(item_indices, -1), item_vectors.dtype)
             item_vectors *= tf.expand_dims(mask, -1)
-            item_vectors = tf.reshape(
-                item_vectors, [-1, self.config['max_history_length'], self.config['embed_dim']])
+            item_vectors = tf.reshape(item_vectors, [batch_size, seq_length, -1])
 
             # compute user vectors
             state_seq, _ = self.user_model(
@@ -249,8 +250,6 @@ class RecModel(tf.keras.Model):
                 training=True
             )
 
-            batch_size = tf.shape(inputs['info'])[0]
-            seq_length = tf.shape(inputs['info'])[1]
             batch_idx = tf.range(0, batch_size)
             length_idx = tf.range(0, seq_length)
             a = batch_idx[:, tf.newaxis, tf.newaxis, tf.newaxis]
