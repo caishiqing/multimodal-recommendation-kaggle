@@ -227,8 +227,8 @@ class RecModel(tf.keras.Model):
             batch_size = tf.shape(inputs['items'])[0]
             seq_length = tf.shape(inputs['items'])[1]
             # compute item vectors
-            pad_mask = tf.not_equal(inputs['items'], -1)
             item_indices = tf.reshape(inputs['items'], [-1])
+            pad_mask = tf.not_equal(item_indices, -1)
             item_vectors = self.item_model(
                 {
                     'info': tf.gather(self.item_data['info'], item_indices),
@@ -265,7 +265,7 @@ class RecModel(tf.keras.Model):
             )
             prd_mask = tf.reshape(prd_mask, [batch_size, seq_length, -1])
             prd_mask = tf.logical_not(prd_mask)  # mask history item
-            pad_mask = tf.reshape(pad_mask, [-1])[tf.newaxis, tf.newaxis, :]
+            pad_mask = pad_mask[tf.newaxis, tf.newaxis, :]
             mask = tf.logical_and(pad_mask, prd_mask)  # (batch, len, batch * len)
 
             # compute logits
@@ -291,6 +291,7 @@ class RecModel(tf.keras.Model):
 
 
 if __name__ == '__main__':
+    import numpy as np
     config = {
         'max_history_length': 32,
         'predict_length': 12,
@@ -301,21 +302,27 @@ if __name__ == '__main__':
         'embed_dim': 64,
         'bert_path': 'bert-base-uncased',
         'image_weights': 'imagenet',
-        'image_height': 128,
-        'image_width': 128
+        'image_height': 96,
+        'image_width': 96
+    }
+
+    item_data = {
+        'info': np.random.randint(0, 4, (10, 3)),
+        'desc': np.asarray([[0, 1, 2, 3, 4, 5, 6, 7]]*10),
+        'image': tf.map_fn(
+            tf.image.encode_jpeg,
+            tf.ones((10, 96, 96, 3), dtype=tf.uint8), dtype=tf.string).numpy()
     }
 
     item_model, user_model = build_model(config)
     item_model.summary()
     user_model.summary()
-    rec_model = RecModel(config, item_model, user_model)
+    rec_model = RecModel(config, item_model, user_model, item_data)
     rec_model.compile('adam')
 
     inputs = {
-        'info': tf.constant([[[1, 2, 3], [2, 3, 4]]], dtype=tf.int32),
-        'desc': tf.constant([[[1, 2, 3, 4, 5, 6, 7, 8], [2, 3, 4, 5, 6, 7, 8, 9]]], dtype=tf.int32),
-        'image': tf.random.uniform((1, 2, 128, 128, 3)),
-        'profile': tf.constant([[1, 2]], dtype=tf.int32),
-        'context': tf.constant([[[1, 2], [3, 4]]], dtype=tf.int32)
+        'items': tf.constant([[1, 3], [2, 5]], dtype=tf.int32),
+        'profile': tf.constant([[1, 2], [0, 2]], dtype=tf.int32),
+        'context': tf.constant([[[1, 2], [3, 4]], [[1, 2], [3, 4]]], dtype=tf.int32)
     }
     loss = rec_model.train_step(inputs)
