@@ -227,6 +227,7 @@ class RecModel(tf.keras.Model):
             batch_size = tf.shape(inputs['items'])[0]
             seq_length = tf.shape(inputs['items'])[1]
             # compute item vectors
+            pad_mask = tf.not_equal(inputs['items'], -1)
             item_indices = tf.reshape(inputs['items'], [-1])
             item_vectors = self.item_model(
                 {
@@ -236,8 +237,7 @@ class RecModel(tf.keras.Model):
                 },
                 training=True
             )
-            mask = tf.cast(tf.not_equal(item_indices, -1), item_vectors.dtype)
-            item_vectors *= tf.expand_dims(mask, -1)
+            item_vectors *= tf.expand_dims(tf.cast(pad_mask, tf.float32), -1)
             item_vectors = tf.reshape(item_vectors, [batch_size, seq_length, -1])
 
             # compute user vectors
@@ -265,7 +265,6 @@ class RecModel(tf.keras.Model):
             )
             prd_mask = tf.reshape(prd_mask, [batch_size, seq_length, -1])
             prd_mask = tf.logical_not(prd_mask)  # mask history item
-            pad_mask = tf.reduce_any(tf.not_equal(inputs['desc'], 0), axis=-1)
             pad_mask = tf.reshape(pad_mask, [-1])[tf.newaxis, tf.newaxis, :]
             mask = tf.logical_and(pad_mask, prd_mask)  # (batch, len, batch * len)
 
