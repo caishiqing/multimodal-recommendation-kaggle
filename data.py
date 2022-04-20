@@ -107,7 +107,6 @@ class RecData(object):
     def prepare_features(self, tokenizer: BertTokenizer):
         if not self._processed:
             print('Process item features ...', end='')
-            info = []
             for key, feat_map in self.item_feature_dict.items():
                 self.items[key] = self.items[key].map(lambda x: feat_map.get(x, 0))
             self.info_data = np.asarray(
