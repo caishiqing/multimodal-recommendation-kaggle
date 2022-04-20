@@ -148,6 +148,7 @@ class RecData(object):
         flag &= 'info' in self.items
         flag &= 'context' in self.trans
         flag &= isinstance(self.items['desc'][0], list)
+        flag &= self._padded
         return flag
 
     def prepare_train(self, test_users: list = None):
