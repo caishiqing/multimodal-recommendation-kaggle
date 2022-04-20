@@ -79,14 +79,16 @@ class RecData(object):
         self.config = build_config(config)
         self.resize_image = resize_image
 
-        self.items = items.reset_index(drop=True)
-        self.users = users.reset_index(drop=True)
+        self.items = items
+        self.users = users
         self.trans = trans
+        self.items.reset_index(drop=True, inplace=True)
+        self.users.reset_index(drop=True, inplace=True)
+        self.trans.reset_index(drop=True, inplace=True)
 
         # items and users use reseted index
         self.item_index_map = OrderedDict([(id, i) for i, id in enumerate(self.items['id'])])
         self.user_index_map = OrderedDict([(id, i) for i, id in enumerate(self.users['id'])])
-        self.trans.reset_index(drop=True, inplace=True)
         self.trans['item'] = self.trans['item'].map(self.item_index_map)
         self.trans['user'] = self.trans['user'].map(self.user_index_map)
 
