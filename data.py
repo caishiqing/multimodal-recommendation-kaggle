@@ -110,7 +110,7 @@ class RecData(object):
             for key, feat_map in self.item_feature_dict.items():
                 self.items[key] = self.items[key].map(lambda x: feat_map.get(x, 0))
             self.info_data = np.asarray(
-                list(zip(*[self.pop(key) for key in self.item_feature_dict])),
+                list(zip(*[self.items.pop(key) for key in self.item_feature_dict])),
                 dtype=np.uint16
             )
             self.desc_data = np.asarray(
