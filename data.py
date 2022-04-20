@@ -5,6 +5,7 @@ import tensorflow as tf
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
+import base64
 import json
 import os
 
@@ -64,8 +65,6 @@ class RecData(object):
                  trans: pd.DataFrame,
                  config: Union[dict, BertConfig],
                  feature_path: str = None,
-                 image_dir: str = None,
-                 tfrecord_dir: str = None,
                  resize_image: bool = False):
 
         assert 'id' in items and 'id' in users
@@ -97,18 +96,6 @@ class RecData(object):
         else:
             self._learn_feature_dict()
 
-        # add tfrecord path column to item
-        if tfrecord_dir is not None:
-            self.items['tfrecord'] = self.items['id'].apply(lambda x: os.path.join(tfrecord_dir, str(x)+'.tfrecord'))
-
-        # add image bytes to item
-        if image_dir is not None:
-            autotune = tf.data.experimental.AUTOTUNE
-            image_dataset = tf.data.Dataset.from_tensor_slices(
-                self.items['id'].apply(lambda x: os.path.join(image_dir, str(x)+'.jpg'))
-            ).map(tf.io.read_file, autotune).batch(len(self.items))
-            self.items['image'] = list(image_dataset)[0].numpy()
-
     def prepare_features(self, tokenizer: BertTokenizer = None, padding_desc=False):
         if not self._processed:
             print('Process item features ...', end='')
@@ -118,6 +105,7 @@ class RecData(object):
                 del self.items[key]
 
             self.items['info'] = list(zip(*info))
+            self.items['image'] = self.items['image'].map(base64.b64decode)
             if 'desc' in self.items and tokenizer is not None:
                 # Wether or not to tokenize items' descriptions
                 self.items['desc'] = tokenizer(
@@ -221,10 +209,12 @@ class RecData(object):
 
     @property
     def image_data(self):
-        if not self.include_image:
-            return None
-
-        return np.asarray(self.items['image'])
+        assert self._processed
+        autotune = tf.data.experimental.AUTOTUNE
+        image_dataset = tf.data.Dataset.from_tensor_slices(
+            self.items['image'].to_list()
+        ).map(tf.image.decode_jpeg, autotune).batch(len(self.items))
+        return list(image_dataset)[0].numpy()
 
     @property
     def tfrecord_path(self):
@@ -383,105 +373,6 @@ class RecData(object):
         ).shuffle(2*batch_size).batch(batch_size)
 
         return dataset
-
-    def item_dataset(self, batch_size: int = 32):
-        assert self._processed and self._padded
-        autotune = tf.data.experimental.AUTOTUNE
-        tfrecord_path = self.tfrecord_path
-        image_path = self.image_path
-        assert tfrecord_path is not None or image_path is not None
-
-        if tfrecord_path is not None:
-            print('Building item dataset from TFRecords ...', end='')
-            dataset = tf.data.TFRecordDataset(
-                tfrecord_path, num_parallel_reads=autotune
-            ).map(self._parse_item_tfrecord, autotune).batch(batch_size)
-            print('Done.')
-        else:
-            print('Building item dataset from image files ...', end='')
-            info = tf.data.Dataset.from_tensor_slices(self.info_data)
-            desc = tf.data.Dataset.from_tensor_slices(self.desc_data)
-            image = tf.data.Dataset.from_tensor_slices(image_path).map(self._read_image, autotune)
-            dataset = tf.data.Dataset.zip((info, desc, image)).map(self._process_item).batch(batch_size)
-            print('Done.')
-
-        return dataset
-
-    def _decode_image(self, img_bytes):
-        image = tf.image.decode_image(img_bytes, expand_animations=False)
-        image = tf.image.convert_image_dtype(image, tf.float32)
-        if not self.resize_image:
-            image.set_shape([self.config.image_height, self.config.image_width, 3])
-
-        return image
-
-    def _read_image(self, img_path):
-        img_bytes = tf.io.read_file(img_path)
-        image = self._decode_image(img_bytes)
-        if self.resize_image:
-            image = tf.image.resize(
-                image, size=(self.config.image_height, self.config.image_width)
-            )
-
-        return image
-
-    def _process_train(self, *inputs):
-        """ Train images are 2D image path 
-        """
-        profile, context, info, desc, image = inputs
-        inputs = {
-            'profile': profile,
-            'context': context,
-            'info': info,
-            'desc': desc,
-            'image': image
-        }
-        return inputs
-
-    def _process_tfrecord(self, *inputs):
-        profile, context, item = inputs
-        inputs = {
-            'profile': profile,
-            'context': context,
-            'image': item['image'],
-            'desc': item['desc'],
-            'info': item['info']
-        }
-        return inputs
-
-    def _process_item(self, *inputs):
-        info, desc, image = inputs
-        return {
-            'info': info,
-            'desc': desc,
-            'image': image
-        }
-
-    def _process_infer(self, inputs):
-        """ Infer images are list of image path 
-        """
-        image_path = inputs.pop('image_path', None)
-        if image_path is not None:
-            inputs['image'] = self._read_image(inputs['image_path'])
-            inputs['image'].set_shape((self.config.image_height, self.config.image_width, 3))
-
-        return inputs
-
-    def _parse_item_tfrecord(self, item_tfrecord_proto):
-        example = tf.io.parse_single_example(item_tfrecord_proto, self.item_schema)
-        example['info'] = tf.cast(example['info'], tf.int32)
-        example['desc'] = tf.cast(example['desc'], tf.int32)
-        example['image'] = self._decode_image(example['image'])
-        return example
-
-    @property
-    def item_schema(self):
-        schema = {
-            'info': tf.io.FixedLenFeature([len(self.info_size)], tf.int64),
-            'desc': tf.io.FixedLenFeature([self.config.max_desc_length], tf.int64),
-            'image': tf.io.FixedLenFeature([], tf.string),
-        }
-        return schema
 
     def save_feature_dict(self, save_dir: str):
         # Save feature dict to direction
