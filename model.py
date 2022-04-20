@@ -205,13 +205,11 @@ class RecModel(tf.keras.Model):
         self.item_model = item_model
         self.user_model = user_model
 
-        autotune = tf.data.experimental.AUTOTUNE
+        # Cache item data to accelarate
         self.item_data = {
             'info': tf.constant(item_data['info'], tf.int32),
             'desc': tf.constant(item_data['desc'], tf.int32),
-            'image': list(tf.data.Dataset.from_tensor_slices(
-                item_data['image']).map(tf.image.decode_image, autotune).batch(len(item_data['image']))
-            )[0]
+            'image': tf.constant(item_data['image'], tf.uint8)
         }
 
     def compile(self, optimizer, margin=0.0, gamma=1.0):
