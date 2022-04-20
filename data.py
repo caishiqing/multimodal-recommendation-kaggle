@@ -216,11 +216,11 @@ class RecData(object):
         # ).map(tf.image.decode_jpeg, autotune).batch(len(self.items))
         # return list(image_dataset)[0].numpy()
 
-        @tf.function
-        def decode_image(imgs):
-            return tf.map_fn(tf.image.decode_jpeg, imgs, dtype=tf.uint8)
+        # @tf.function
+        # def decode_image(imgs):
+        #     return tf.map_fn(tf.image.decode_jpeg, imgs, dtype=tf.uint8)
 
-        return decode_image(self.items['image']).numpy()
+        return tf.map_fn(tf.image.decode_jpeg, self.items['image'], dtype=tf.uint8).numpy()
 
     @property
     def profile_data(self):
