@@ -134,7 +134,7 @@ class RecData(object):
             print('Process user features ...', end='')
             self.profile_data = np.zeros((len(self.users)+1, len(self.profile_size)), dtype=np.int32)
             for i, (key, feat_map) in enumerate(self.user_feature_dict.items()):
-                self.profile_size[:-1, i] = self.users.pop(key).map(lambda x: feat_map.get(x, 0))
+                self.profile_data[:-1, i] = self.users.pop(key).map(lambda x: feat_map.get(x, 0))
             print('Done!')
 
             print('Process transaction features ...', end='')
