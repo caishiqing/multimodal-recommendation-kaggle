@@ -126,7 +126,7 @@ class RecData(object):
             )
             self.image_data = list(tf.data.Dataset.from_tensor_slices(
                 self.items.pop('image').map(base64.b64decode)).map(
-                tf.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
+                tf.image.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
             print('Done!')
 
             print('Process user features ...', end='')
