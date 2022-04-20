@@ -108,7 +108,7 @@ class RecData(object):
         if not self._processed:
             print('Process item features ...', end='')
             # length + 1 for padding
-            self.info_data = np.zeros((len(self.items)+1, len(self.info_size)), dtype=np.uint16)
+            self.info_data = np.zeros((len(self.items)+1, len(self.info_size)), dtype=np.int32)
             for i, (key, feat_map) in enumerate(self.item_feature_dict.items()):
                 self.info_data[:-1, i] = self.items.pop(key).map(feat_map)
 
@@ -121,7 +121,7 @@ class RecData(object):
                     return_attention_mask=False,
                     return_token_type_ids=False
                 )['input_ids'],
-                dtype=np.uint16
+                dtype=np.int32
             )
             self.desc_data[-1] *= 0
 
@@ -132,13 +132,13 @@ class RecData(object):
             print('Done!')
 
             print('Process user features ...', end='')
-            self.profile_data = np.zeros((len(self.users)+1, len(self.profile_size)), dtype=np.uint16)
+            self.profile_data = np.zeros((len(self.users)+1, len(self.profile_size)), dtype=np.int32)
             for i, (key, feat_map) in enumerate(self.user_feature_dict.items()):
                 self.profile_size[:-1, i] = self.users.pop(key).map(lambda x: feat_map.get(x, 0))
             print('Done!')
 
             print('Process transaction features ...', end='')
-            self.context_data = np.zeros((len(self.trans)+1, len(self.context_size)), dtype=np.uint16)
+            self.context_data = np.zeros((len(self.trans)+1, len(self.context_size)), dtype=np.int32)
             for i, (key, feat_map) in enumerate(self.trans_feature_dict.items()):
                 self.context_data[:-1, i] = self.trans.pop(key).map(lambda x: feat_map.get(x, 0))
                 self.trans[key] = self.trans[key].map(lambda x: feat_map.get(x, 0))
