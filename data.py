@@ -70,6 +70,12 @@ class RecData(object):
         assert 'id' in items and 'id' in users
         assert 'item' in trans and 'user' in trans
 
+        self.info_data = None
+        self.desc_data = None
+        self.image_data = None
+        self.profile_data = None
+        self.context_data = None
+
         self.item_feature_dict = OrderedDict()
         self.user_feature_dict = OrderedDict()
         self.trans_feature_dict = OrderedDict()
@@ -98,46 +104,41 @@ class RecData(object):
         else:
             self._learn_feature_dict()
 
-    def prepare_features(self, tokenizer: BertTokenizer = None, padding_desc=False):
+    def prepare_features(self, tokenizer: BertTokenizer):
         if not self._processed:
             print('Process item features ...', end='')
             info = []
             for key, feat_map in self.item_feature_dict.items():
-                info.append(self.items[key].map(lambda x: feat_map.get(x, 0)))
-                del self.items[key]
-
-            self.items['info'] = list(zip(*info))
-            self.items['image'] = self.items['image'].map(base64.b64decode)
-            if 'desc' in self.items and tokenizer is not None:
-                # Wether or not to tokenize items' descriptions
-                self.items['desc'] = tokenizer(
-                    self.items['desc'].to_list(),
+                info.append(self.items.pop(key).map(lambda x: feat_map.get(x, 0)))
+            self.info_data = np.asarray(list(zip(*info)), dtype=np.uint16)
+            self.desc_data = np.asarray(
+                tokenizer(
+                    self.items.pop('desc').to_list(),
                     max_length=self.config.max_desc_length,
                     truncation=True,
-                    padding=padding_desc,
+                    padding='max_length',
                     return_attention_mask=False,
                     return_token_type_ids=False
-                )['input_ids']
-            elif 'desc' in self.items:
-                del self.items['desc']
+                )['input_ids'],
+                dtype=np.uint16
+            )
+            image_bytes = self.items.pop('image').map(base64.b64decode)
+            self.image_data = list(tf.data.Dataset.from_tensor_slices(image_bytes).map(
+                tf.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
             print('Done!')
 
             print('Process user features ...', end='')
             profile = []
             for key, feat_map in self.user_feature_dict.items():
-                profile.append(self.users[key].map(lambda x: feat_map.get(x, 0)))
-                del self.users[key]
-
-            self.users['profile'] = list(zip(*profile))
+                profile.append(self.users.pop(key).map(lambda x: feat_map.get(x, 0)))
+            self.profile_data = np.asarray(list(zip(*profile)), dtype=np.uint16)
             print('Done!')
 
             print('Process transaction features ...', end='')
             context = []
             for key, feat_map in self.trans_feature_dict.items():
-                context.append(self.trans[key].map(lambda x: feat_map.get(x, 0)))
-                del self.trans[key]
-
-            self.trans['context'] = list(zip(*context))
+                context.append(self.trans.pop(key).map(lambda x: feat_map.get(x, 0)))
+            self.context_data = np.asarray(list(zip(*context)), dtype=np.uint16)
             print('Done!')
 
             self.padding()
@@ -146,10 +147,11 @@ class RecData(object):
 
     @property
     def _processed(self):
-        flag = 'profile' in self.users
-        flag &= 'info' in self.items
-        flag &= 'context' in self.trans
-        flag &= isinstance(self.items['desc'][0], list)
+        flag = self.info_data is not None
+        flag &= self.desc_data is not None
+        flag &= self.image_data is not None
+        flag &= self.profile_data is not None
+        flag &= self.context_data is not None
         flag &= self._padded
         return flag
 
@@ -191,55 +193,12 @@ class RecData(object):
         print('Test samples: {}'.format(len(self.test_wrapper)))
 
     @property
-    def desc_data(self):
-        assert self._processed
-        token_ids = tf.keras.preprocessing.sequence.pad_sequences(
-            self.items['desc'].to_list(), maxlen=self.config.max_desc_length,
-            padding='post', truncating='post', dtype=np.int32, value=0
-        )
-        if self._padded:
-            token_ids[-1] *= 0
-
-        return token_ids
-
-    @property
-    def info_data(self):
-        assert self._processed
-        return np.asarray(self.items['info'].to_list(), np.int32)
-
-    @property
-    def image_data(self):
-        assert self._processed
-        autotune = tf.data.experimental.AUTOTUNE
-        image_dataset = tf.data.Dataset.from_tensor_slices(
-            self.items['image'].to_list()
-        ).map(tf.image.decode_jpeg, autotune).batch(len(self.items))
-        return list(image_dataset)[0].numpy()
-
-        # @tf.function
-        # def decode_image(imgs):
-        #     return tf.map_fn(tf.image.decode_jpeg, imgs, dtype=tf.uint8)
-
-        # return decode_image(self.items['image']).numpy()
-
-    @property
-    def profile_data(self):
-        assert self._processed
-        return np.asarray(self.users['profile'].to_list(), dtype=np.int32)
-
-    @property
-    def context_data(self):
-        assert self._processed
-        return np.asarray(self.trans['context'].to_list(), dtype=np.int32)
-
-    @property
     def item_data(self):
-        data = {
+        return {
             'info': self.info_data,
             'desc': self.desc_data,
             'image': self.image_data
         }
-        return data
 
     @property
     def infer_wrapper(self):
@@ -276,35 +235,21 @@ class RecData(object):
 
     def padding(self):
         # pad items
-        padding = {col: None for col in self.items}
-        padding['id'] = 'padding'
-        padding['info'] = (0,) * len(self.item_feature_dict)
-        padding['desc'] = (0,) * self.config.max_desc_length
-        if 'tfrecord' in self.items:
-            tfrecord_dir = os.path.split(self.items['tfrecord'][0])[0]
-            padding['tfrecord'] = os.path.join(tfrecord_dir, 'padding.tfrecord')
-        if 'image' in self.items:
-            pad_image = np.zeros((self.config.image_height, self.config.image_width, 3), np.uint8)
-            pad_image = tf.image.encode_jpeg(tf.constant(pad_image)).numpy()
-            padding['image'] = pad_image
-        self.items.loc[-1] = padding
+        self.info_data = np.vstack(self.info_data, [0]*len(self.info_size))
+        self.desc_data = np.vstack(self.desc_data, [0]*self.config.desc_max_length)
+        self.image_data = np.vstack(self.image_data, np.zeros(self.image_data.shape[1:], np.uint8))
 
         # pad users
-        padding = {col: None for col in self.users}
-        padding['id'] = 'padding'
-        padding['profile'] = (0,) * len(self.user_feature_dict)
-        self.users.loc[-1] = padding
+        self.profile_data = np.vstack(self.profile_data, [0]*len(self.profile_size))
 
         # pad transactions
-        padding = {col: None for col in self.users}
-        padding['context'] = (0,) * len(self.trans_feature_dict)
-        padding['item'] = -1
-        padding['user'] = -1
-        self.trans.loc[-1] = padding
+        self.context_data = np.vstack(self.context_data, [0]*len(self.context_size))
 
     @property
     def _padded(self):
-        return -1 in self.items.index and -1 in self.users.index and -1 in self.trans.index
+        return len(self.info_data) == len(self.items) + 1 and \
+            len(self.profile_data) == len(self.users) + 1 and \
+            len(self.context_data) == len(self.trans) + 1
 
     def _learn_feature_dict(self):
         for col in self.items.columns:
