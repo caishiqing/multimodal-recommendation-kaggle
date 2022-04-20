@@ -210,11 +210,17 @@ class RecData(object):
     @property
     def image_data(self):
         assert self._processed
-        autotune = tf.data.experimental.AUTOTUNE
-        image_dataset = tf.data.Dataset.from_tensor_slices(
-            self.items['image'].to_list()
-        ).map(tf.image.decode_jpeg, autotune).batch(len(self.items))
-        return list(image_dataset)[0].numpy()
+        # autotune = tf.data.experimental.AUTOTUNE
+        # image_dataset = tf.data.Dataset.from_tensor_slices(
+        #     self.items['image'].to_list()
+        # ).map(tf.image.decode_jpeg, autotune).batch(len(self.items))
+        # return list(image_dataset)[0].numpy()
+
+        @tf.function
+        def decode_image(imgs):
+            return tf.map_fn(tf.image.decode_jpeg, imgs, dtype=tf.uint8)
+
+        return decode_image(self.items['image']).numpy()
 
     @property
     def profile_data(self):
