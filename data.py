@@ -107,15 +107,14 @@ class RecData(object):
     def prepare_features(self, tokenizer: BertTokenizer):
         if not self._processed:
             print('Process item features ...', end='')
-            for key, feat_map in self.item_feature_dict.items():
-                self.items[key] = self.items[key].map(lambda x: feat_map.get(x, 0))
-            self.info_data = np.asarray(
-                list(zip(*[self.items.pop(key) for key in self.item_feature_dict])),
-                dtype=np.uint16
-            )
+            # length + 1 for padding
+            self.info_data = np.zeros((len(self.items)+1, len(self.info_size)), dtype=np.uint16)
+            for i, (key, feat_map) in enumerate(self.item_feature_dict.items()):
+                self.info_data[:-1, i] = self.items.pop(key).map(feat_map)
+
             self.desc_data = np.asarray(
                 tokenizer(
-                    self.items.pop('desc').to_list(),
+                    self.items.pop('desc').to_list() + [''],
                     max_length=self.config.max_desc_length,
                     truncation=True,
                     padding='max_length',
@@ -124,30 +123,26 @@ class RecData(object):
                 )['input_ids'],
                 dtype=np.uint16
             )
+            self.desc_data[-1] *= 0
+
             self.image_data = list(tf.data.Dataset.from_tensor_slices(
                 self.items.pop('image').map(base64.b64decode)).map(
                 tf.image.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
+            self.item_data = np.vstack([self.item_data, np.zeros(self.item_data.shape[1:], np.uint8)])
             print('Done!')
 
             print('Process user features ...', end='')
-            for key, feat_map in self.user_feature_dict.items():
-                self.users[key] = self.users[key].map(lambda x: feat_map.get(x, 0))
-            self.profile_data = np.asarray(
-                list(zip(*[self.users.pop(key) for key in self.user_feature_dict])),
-                dtype=np.uint16
-            )
+            self.profile_data = np.zeros((len(self.users)+1, len(self.profile_size)), dtype=np.uint16)
+            for i, (key, feat_map) in enumerate(self.user_feature_dict.items()):
+                self.profile_size[:-1, i] = self.users.pop(key).map(lambda x: feat_map.get(x, 0))
             print('Done!')
 
             print('Process transaction features ...', end='')
-            for key, feat_map in self.trans_feature_dict.items():
+            self.context_data = np.zeros((len(self.trans)+1, len(self.context_size)), dtype=np.uint16)
+            for i, (key, feat_map) in enumerate(self.trans_feature_dict.items()):
+                self.context_data[:-1, i] = self.trans.pop(key).map(lambda x: feat_map.get(x, 0))
                 self.trans[key] = self.trans[key].map(lambda x: feat_map.get(x, 0))
-            self.context_data = np.asarray(
-                list(zip(*[self.trans.pop(key) for key in self.trans_feature_dict])),
-                dtype=np.uint16
-            )
             print('Done!')
-
-            self.padding()
         else:
             print("Features are aleady prepared.")
 
@@ -238,24 +233,6 @@ class RecData(object):
 
         return size
 
-    def padding(self):
-        # pad items
-        self.info_data = np.vstack(self.info_data, [0]*len(self.info_size))
-        self.desc_data = np.vstack(self.desc_data, [0]*self.config.desc_max_length)
-        self.image_data = np.vstack(self.image_data, np.zeros(self.image_data.shape[1:], np.uint8))
-
-        # pad users
-        self.profile_data = np.vstack(self.profile_data, [0]*len(self.profile_size))
-
-        # pad transactions
-        self.context_data = np.vstack(self.context_data, [0]*len(self.context_size))
-
-    @ property
-    def _padded(self):
-        return len(self.info_data) == len(self.items) + 1 and \
-            len(self.profile_data) == len(self.users) + 1 and \
-            len(self.context_data) == len(self.trans) + 1
-
     def _learn_feature_dict(self):
         for col in self.items.columns:
             if col in self._sys_fields:
@@ -293,7 +270,7 @@ class RecData(object):
         print(info)
 
     def train_dataset(self, batch_size: int = 8):
-        assert self._processed and self._padded
+        assert self._processed
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             self.train_wrapper.trans_indices, maxlen=self.config.max_history_length,
             padding='pre', truncating='pre', value=-1

@@ -77,7 +77,6 @@ class RecEngine:
         rec_model.fit(dataset, epochs=kwargs.get('epochs', 10), callbacks=[checkpoint])
 
     def infer(self, data: RecData, batch_size: int = 128, top_k=10):
-        assert data._padded
         item_vectors = self.item_model.predict(
             data.item_data, batch_size=batch_size, verbose=1)
         item_vectors[-1] *= 0  # for padding
