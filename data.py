@@ -109,8 +109,11 @@ class RecData(object):
             print('Process item features ...', end='')
             info = []
             for key, feat_map in self.item_feature_dict.items():
-                info.append(self.items.pop(key).map(lambda x: feat_map.get(x, 0)))
-            self.info_data = np.asarray(list(zip(*info)), dtype=np.uint16)
+                self.items[key] = self.items[key].map(lambda x: feat_map.get(x, 0))
+            self.info_data = np.asarray(
+                list(zip(*[self.pop(key) for key in self.item_feature_dict])),
+                dtype=np.uint16
+            )
             self.desc_data = np.asarray(
                 tokenizer(
                     self.items.pop('desc').to_list(),
@@ -122,30 +125,34 @@ class RecData(object):
                 )['input_ids'],
                 dtype=np.uint16
             )
-            image_bytes = self.items.pop('image').map(base64.b64decode)
-            self.image_data = list(tf.data.Dataset.from_tensor_slices(image_bytes).map(
+            self.image_data = list(tf.data.Dataset.from_tensor_slices(
+                self.items.pop('image').map(base64.b64decode)).map(
                 tf.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
             print('Done!')
 
             print('Process user features ...', end='')
-            profile = []
             for key, feat_map in self.user_feature_dict.items():
-                profile.append(self.users.pop(key).map(lambda x: feat_map.get(x, 0)))
-            self.profile_data = np.asarray(list(zip(*profile)), dtype=np.uint16)
+                self.users[key] = self.users[key].map(lambda x: feat_map.get(x, 0))
+            self.profile_data = np.asarray(
+                list(zip(*[self.users.pop(key) for k in self.user_feature_dict])),
+                dtype=np.uint16
+            )
             print('Done!')
 
             print('Process transaction features ...', end='')
-            context = []
             for key, feat_map in self.trans_feature_dict.items():
-                context.append(self.trans.pop(key).map(lambda x: feat_map.get(x, 0)))
-            self.context_data = np.asarray(list(zip(*context)), dtype=np.uint16)
+                self.trans[key] = self.trans[key].map(lambda x: feat_map.get(x, 0))
+            self.context_data = np.asarray(
+                list(zip(*[self.trans.pop(key) for key in self.trans_feature_dict])),
+                dtype=np.uint16
+            )
             print('Done!')
 
             self.padding()
         else:
             print("Features are aleady prepared.")
 
-    @property
+    @ property
     def _processed(self):
         flag = self.info_data is not None
         flag &= self.desc_data is not None
@@ -192,7 +199,7 @@ class RecData(object):
         print('Train samples: {}'.format(len(self.train_wrapper)))
         print('Test samples: {}'.format(len(self.test_wrapper)))
 
-    @property
+    @ property
     def item_data(self):
         return {
             'info': self.info_data,
@@ -200,7 +207,7 @@ class RecData(object):
             'image': self.image_data
         }
 
-    @property
+    @ property
     def infer_wrapper(self):
         wrapper = DataWrapper()
         for user_idx, df in self.trans.groupby('user'):
@@ -209,7 +216,7 @@ class RecData(object):
 
         return wrapper
 
-    @property
+    @ property
     def info_size(self):
         size = []
         for feat, feat_map in self.item_feature_dict.items():
@@ -217,7 +224,7 @@ class RecData(object):
 
         return size
 
-    @property
+    @ property
     def profile_size(self):
         size = []
         for feat, feat_map in self.user_feature_dict.items():
@@ -225,7 +232,7 @@ class RecData(object):
 
         return size
 
-    @property
+    @ property
     def context_size(self):
         size = []
         for feat, feat_map in self.trans_feature_dict.items():
@@ -245,7 +252,7 @@ class RecData(object):
         # pad transactions
         self.context_data = np.vstack(self.context_data, [0]*len(self.context_size))
 
-    @property
+    @ property
     def _padded(self):
         return len(self.info_data) == len(self.items) + 1 and \
             len(self.profile_data) == len(self.users) + 1 and \
