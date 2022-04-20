@@ -141,7 +141,6 @@ class RecData(object):
             self.context_data = np.zeros((len(self.trans)+1, len(self.context_size)), dtype=np.int32)
             for i, (key, feat_map) in enumerate(self.trans_feature_dict.items()):
                 self.context_data[:-1, i] = self.trans.pop(key).map(lambda x: feat_map.get(x, 0))
-                self.trans[key] = self.trans[key].map(lambda x: feat_map.get(x, 0))
             print('Done!')
         else:
             print("Features are aleady prepared.")
