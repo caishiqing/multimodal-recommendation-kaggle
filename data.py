@@ -133,7 +133,7 @@ class RecData(object):
             for key, feat_map in self.user_feature_dict.items():
                 self.users[key] = self.users[key].map(lambda x: feat_map.get(x, 0))
             self.profile_data = np.asarray(
-                list(zip(*[self.users.pop(key) for k in self.user_feature_dict])),
+                list(zip(*[self.users.pop(key) for key in self.user_feature_dict])),
                 dtype=np.uint16
             )
             print('Done!')
