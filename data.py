@@ -158,7 +158,6 @@ class RecData(object):
         flag &= self.image_data is not None
         flag &= self.profile_data is not None
         flag &= self.context_data is not None
-        flag &= self._padded
         return flag
 
     def prepare_train(self, test_users: list = None):
