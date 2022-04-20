@@ -147,7 +147,7 @@ class RecData(object):
         flag = 'profile' in self.users
         flag &= 'info' in self.items
         flag &= 'context' in self.trans
-        flag &= not self.include_desc or isinstance(self.items['desc'][0], list)
+        flag &= isinstance(self.items['desc'][0], list)
         return flag
 
     def prepare_train(self, test_users: list = None):
@@ -189,9 +189,6 @@ class RecData(object):
 
     @property
     def desc_data(self):
-        if not self.include_desc:
-            return None
-
         assert self._processed
         token_ids = tf.keras.preprocessing.sequence.pad_sequences(
             self.items['desc'].to_list(), maxlen=self.config.max_desc_length,
@@ -274,14 +271,6 @@ class RecData(object):
             size.append(len(feat_map))
 
         return size
-
-    @property
-    def include_image(self):
-        return 'image' in self.items or 'image_path' in self.items
-
-    @property
-    def include_desc(self):
-        return 'desc' in self.items
 
     def padding(self):
         # pad items

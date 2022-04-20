@@ -78,20 +78,15 @@ class RecEngine:
 
     def infer(self, data: RecData, batch_size: int = 128, top_k=10):
         assert data._padded
-        item_vectors = []
-        with tqdm(total=len(data.items)//batch_size, desc='Computing items') as pbar:
-            for data in data.train_dataset(batch_size):
-                pbar.update()
-                item_vectors.append(self.item_model(data).numpy())
-
-        item_vectors = np.vstack(item_vectors)
+        item_vectors = self.item_model.predict(
+            data.item_data, batch_size=batch_size, verbose=1)
         item_vectors[-1] *= 0  # for padding
         user_vectors = self.user_model.infer_initial_state(
-            data.profile_data, batch_size=batch_size)
+            data.profile_data, batch_size=batch_size, verbose=1)
 
         infer_wrapper = data.infer_wrapper
         context = data.context_data
-        with tqdm(total=len(infer_wrapper)//batch_size, desc='Computing users') as pbar:
+        with tqdm(total=len(infer_wrapper)//batch_size, desc='Computing recommendations') as pbar:
             for i in range(0, len(infer_wrapper), batch_size):
                 pbar.update()
                 j = min(i + self.batch_size, len(infer_wrapper))
@@ -109,7 +104,8 @@ class RecEngine:
                         'init_state': batch_init_state,
                         'context': batch_context,
                         'items': batch_item_vectors
-                    }
+                    },
+                    batch_size=batch_size
                 )
                 # update user state vectors
                 user_vectors[user_indices] = batch_user_vectors
@@ -133,7 +129,7 @@ class RecEngine:
                 predictions.append(np.argsort(-score, axis=1)[:top_k])
 
             predictions = np.vstack(predictions)
-            return item_vectors, user_vectors, predictions
+            return predictions
 
 
 class Checkpoint(tf.keras.callbacks.ModelCheckpoint):

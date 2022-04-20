@@ -159,8 +159,9 @@ class User(tf.keras.Model):
 
         return y, h
 
-    def infer_initial_state(self, profile, batch_size=32):
-        return self.profile_model.predict(profile, batch_size=batch_size)
+    def infer_initial_state(self, profile, batch_size=32, **kwargs):
+        return self.profile_model.predict(
+            profile, batch_size=batch_size, **kwargs)
 
 
 def build_model(config):
