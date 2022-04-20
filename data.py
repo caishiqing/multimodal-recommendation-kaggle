@@ -214,13 +214,6 @@ class RecData(object):
         return list(image_dataset)[0].numpy()
 
     @property
-    def tfrecord_path(self):
-        if 'tfrecord' not in self.items:
-            return None
-
-        return np.asarray(self.items['tfrecord'])
-
-    @property
     def profile_data(self):
         assert self._processed
         return np.asarray(self.users['profile'].to_list(), dtype=np.int32)
