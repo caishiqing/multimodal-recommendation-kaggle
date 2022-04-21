@@ -120,9 +120,9 @@ class RecData(object):
             self.image_data = []
             with tqdm(total=len(self.items), desc='Converting image') as pbar:
                 imgs = self.items.pop('image')
-                while imgs:
+                for i in imgs.index:
                     pbar.update()
-                    self.image_data.append(tf.image.decode_jpeg(base64.b64decode(imgs.pop())).numpy())
+                    self.image_data.append(tf.image.decode_jpeg(base64.b64decode(imgs.pop(i))).numpy())
             self.image_data = np.asarray(self.image_data, np.uint8)
             print('Done!')
 
