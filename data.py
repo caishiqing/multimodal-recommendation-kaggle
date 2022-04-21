@@ -142,6 +142,8 @@ class RecData(object):
         padding = {col: 0 for col in self.items}
         padding['id'] = -1
         padding['desc'] = [0]
+        print(padding)
+        print(self.items.columns)
         self.items[-1] = padding
         self.image_data = np.vstack([self.image_data, np.zeros((1,)+self.image_data.shape[1:], np.uint8)])
 
