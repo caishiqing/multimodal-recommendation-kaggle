@@ -105,7 +105,7 @@ class RecData(object):
             for key, feat_map in self.item_feature_dict.items():
                 self.items[key] = self.items[key].map(feat_map)
 
-            self.desc = tokenizer(
+            self.items['desc'] = tokenizer(
                 self.items['desc'].to_list(),
                 max_length=self.config.max_desc_length,
                 truncation=True,
@@ -139,17 +139,17 @@ class RecData(object):
         return flag
 
     def _padding(self):
-        padding = {col: 0 for col in self.items.columns}
+        padding = {col: 0 for col in self.items}
         padding['id'] = -1
         padding['desc'] = [0]
         self.items[-1] = padding
         self.image_data = np.vstack([self.image_data, np.zeros((1,)+self.image_data.shape[1:], np.uint8)])
 
-        padding = {col: 0 for col in self.users.columns}
+        padding = {col: 0 for col in self.users}
         padding['id'] = -1
         self.users[-1] = padding
 
-        padding = {col: 0 for col in self.trans.columns}
+        padding = {col: 0 for col in self.trans}
         padding['id'] = -1
         self.trans[-1] = padding
 
