@@ -114,9 +114,12 @@ class RecData(object):
                 return_token_type_ids=False
             )['input_ids']
 
-            self.image_data = list(tf.data.Dataset.from_tensor_slices(
-                self.items.pop('image').map(base64.b64decode)).map(
-                tf.image.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
+            # self.image_data = list(tf.data.Dataset.from_tensor_slices(
+            #     self.items.pop('image').map(base64.b64decode)).map(
+            #     tf.image.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
+            self.image_data = tf.map_fn(
+                tf.image.decode_jpeg, self.items.pop('image').map(base64.b64decode),
+                dtype=tf.uint8).numpy()
             print('Done!')
 
             print('Process user features ...', end='')
