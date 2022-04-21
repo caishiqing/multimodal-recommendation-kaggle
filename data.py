@@ -122,7 +122,7 @@ class RecData(object):
                 imgs = self.items.pop('image')
                 for i in imgs.index:
                     pbar.update()
-                    img = base64.b64decode(imgs.pop())
+                    img = base64.b64decode(imgs.pop(i))
                     img = tf.image.resize(tf.image.decode_jpeg(img), (self.config.image_height, self.config.image_width))
                     self.image_data.append(img.numpy())
             self.image_data = np.asarray(self.image_data, np.uint8)
