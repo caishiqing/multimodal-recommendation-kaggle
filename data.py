@@ -198,7 +198,7 @@ class RecData(object):
     def item_data(self):
         info = np.asarray(self.items[self.item_feature_dict.keys()], np.int32)
         desc = tf.keras.preprocessing.sequence.pad_sequences(
-            self.items['desc'], maxlen=self.config.desc_max_length, dtype=tf.int32,
+            self.items['desc'], maxlen=self.config.max_desc_length, dtype=tf.int32,
             padding='post', truncating='post', value=0
         )
         return {
