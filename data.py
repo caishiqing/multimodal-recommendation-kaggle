@@ -117,9 +117,13 @@ class RecData(object):
             # self.image_data = list(tf.data.Dataset.from_tensor_slices(
             #     self.items.pop('image').map(base64.b64decode)).map(
             #     tf.image.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
-            self.image_data = tf.map_fn(
-                tf.image.decode_jpeg, self.items.pop('image').map(base64.b64decode),
-                dtype=tf.uint8).numpy()
+            self.image_data = []
+            with tqdm(total=len(self.items), desc='Converting image') as pbar:
+                imgs = self.items.pop('image')
+                while imgs:
+                    pbar.update()
+                    self.image_data.append(tf.image.decode_jpeg(base64.b64decode(imgs.pop())).numpy())
+            self.image_data = np.asarray(self.image_data, np.uint8)
             print('Done!')
 
             print('Process user features ...', end='')
