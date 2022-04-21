@@ -106,7 +106,7 @@ class RecData(object):
                 self.items[key] = self.items[key].map(feat_map)
 
             self.desc = tokenizer(
-                self.items.pop('desc').to_list(),
+                self.items['desc'].to_list(),
                 max_length=self.config.max_desc_length,
                 truncation=True,
                 padding=False,
