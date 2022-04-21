@@ -184,7 +184,7 @@ def build_model(config):
 
     h, w = config.get('image_height', 224), config.get('image_width', 224)
     item_dummy_inputs = {
-        'image': layers.Input(shape=(h, w, 3), dtype=tf.float32),
+        'image': layers.Input(dtype=tf.string),
         'desc': layers.Input(shape=(config['max_desc_length'],), dtype=tf.int32),
         'info': layers.Input(shape=(len(config['info_size']),), dtype=tf.int32)
     }
