@@ -53,8 +53,13 @@ class Image(layers.Layer):
         self.mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
         self.std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
 
+    @tf.function
+    def _decode(self, img_bytes):
+        return tf.map_fn(tf.image.decode_jpeg, img_bytes, dtype=tf.uint8)
+
     def _preprocess(self, img):
-        x = tf.cast(img, tf.float32)/256
+        x = self._decode(img)
+        x = tf.cast(x, tf.float32) / 256
         return (x-self.mean)/self.std
 
     def call(self, img, training=None):
@@ -210,7 +215,7 @@ class RecModel(tf.keras.Model):
         self.item_data = {
             'info': tf.constant(item_data['info'], tf.int32),
             'desc': tf.constant(item_data['desc'], tf.int32),
-            'image': tf.constant(item_data['image'], tf.uint8)
+            'image': tf.constant(item_data['image'], tf.string)
         }
 
     def compile(self, optimizer, margin=0.0, gamma=1.0):

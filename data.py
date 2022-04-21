@@ -117,15 +117,17 @@ class RecData(object):
             # self.image_data = list(tf.data.Dataset.from_tensor_slices(
             #     self.items.pop('image').map(base64.b64decode)).map(
             #     tf.image.decode_jpeg, tf.data.experimental.AUTOTUNE).batch(len(self.items)))[0].numpy()
-            self.image_data = []
-            with tqdm(total=len(self.items), desc='Converting image') as pbar:
-                imgs = self.items.pop('image')
-                for i in imgs.index:
-                    pbar.update()
-                    img = base64.b64decode(imgs.pop(i))
-                    img = tf.image.resize(tf.image.decode_jpeg(img), (self.config.image_height, self.config.image_width))
-                    self.image_data.append(img.numpy())
-            self.image_data = np.asarray(self.image_data, np.uint8)
+
+            # self.image_data = []
+            # with tqdm(total=len(self.items), desc='Converting image') as pbar:
+            #     imgs = self.items.pop('image')
+            #     for i in imgs.index:
+            #         pbar.update()
+            #         img = base64.b64decode(imgs.pop(i))
+            #         img = tf.image.resize(tf.image.decode_jpeg(img), (self.config.image_height, self.config.image_width))
+            #         self.image_data.append(img.numpy())
+            # self.image_data = np.asarray(self.image_data, np.uint8)
+            self.items['image'] = self.items['image'].map(base64.b64decode)
             print('Done!')
 
             print('Process user features ...', end='')
@@ -151,8 +153,9 @@ class RecData(object):
         padding = {col: 0 for col in self.items}
         padding['id'] = -1
         padding['desc'] = [0]
+        padding['image'] = tf.image.encode_jpeg(tf.zeros((self.config.image_height, self.config.image_width, 3), np.uint8)).numpy()
         self.items.loc[-1] = padding
-        self.image_data = np.vstack([self.image_data, np.zeros((1,)+self.image_data.shape[1:], np.uint8)])
+        #self.image_data = np.vstack([self.image_data, np.zeros((1,)+self.image_data.shape[1:], np.uint8)])
 
         padding = {col: 0 for col in self.users}
         padding['id'] = -1
@@ -209,11 +212,12 @@ class RecData(object):
         desc = tf.keras.preprocessing.sequence.pad_sequences(
             self.items['desc'], maxlen=self.config.max_desc_length, dtype=np.int32,
             padding='post', truncating='post', value=0
+
         )
         return {
             'info': info,
             'desc': desc,
-            'image': self.image_data
+            'image': self.items['image']
         }
 
     @property
