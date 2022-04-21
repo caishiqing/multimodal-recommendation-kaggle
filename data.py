@@ -209,11 +209,11 @@ class RecData(object):
 
     @property
     def profile_data(self):
-        return np.asarray(self.users[self.user_feature_dict.keys], np.int32)
+        return np.asarray(self.users[self.user_feature_dict.keys()], np.int32)
 
     @property
     def context_data(self):
-        return np.asarray(self.trans[self.trans_feature_dict.keys], np.int32)
+        return np.asarray(self.trans[self.trans_feature_dict.keys()], np.int32)
 
     @property
     def infer_wrapper(self):
