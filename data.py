@@ -213,7 +213,7 @@ class RecData(object):
         return {
             'info': info,
             'desc': desc,
-            'image': self.items['image']
+            'image': self.image_data
         }
 
     @property
