@@ -196,7 +196,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                 # Apply dot similarity
                 score = np.matmul(batch_user_vectors, item_vectors.T)
                 # Exclude interacted items in history
-                for i, used_items in enumerate(item_indices.reshape([-1, self.max_history_length])):
+                for i, used_items in enumerate(np.asarray(item_indices).reshape([-1, self.max_history_length])):
                     score[i, used_items] -= 1e-5
 
                 # Cut off topk most related items
