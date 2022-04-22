@@ -102,7 +102,7 @@ class RecEngine:
                 batch_context = context[trans_indices].reshape([j-i, self.max_history_length, -1])
                 batch_item_vectors = item_vectors[item_indices].reshape([j-i, self.max_history_length, -1])
                 batch_init_state = user_vectors[user_indices]
-                batch_user_vectors = self.model.user_model.predict(
+                _, batch_user_vectors = self.model.user_model.predict(
                     {
                         'init_state': batch_init_state,
                         'context': batch_context,
@@ -186,7 +186,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                 item_indices = self.data.trans['item'][trans_indices]
                 batch_context = context[trans_indices].reshape([j-i, self.max_history_length, -1])
                 batch_item_vectors = item_vectors[item_indices].reshape([j-i, self.max_history_length, -1])
-                batch_user_vectors = self.model.user_model.predict(
+                _, batch_user_vectors = self.model.user_model.predict(
                     {
                         'profile': batch_profile,
                         'context': batch_context,
@@ -194,7 +194,6 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                     }
                 )
                 # Apply dot similarity
-                print(batch_user_vectors.shape, item_vectors.shape)
                 score = np.matmul(batch_user_vectors, item_vectors.T)
                 # Exclude interacted items in history
                 for i, used_items in enumerate(item_indices.reshape([-1, self.max_history_length])):
