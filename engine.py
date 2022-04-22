@@ -162,15 +162,8 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         profile = self.data.profile_data
         context = self.data.context_data
 
-        item_vectors = []
-        with tqdm(total=len(self.data.items) // self.batch_size, desc='Compute items') as pbar:
-            item_dataset = tf.data.Dataset.from_tensor_slices(self.model.item_data).batch(self.batch_size)
-            for data in item_dataset:
-                pbar.update()
-                batch_vector = self.model.item_model(data).numpy()
-                item_vectors.append(batch_vector)
-
-        item_vectors = np.vstack(item_vectors)
+        item_vectors=self.model.item_model.predict(
+            self.data.item_data,batch_size=self.batch_size, verbose=1)
         item_vectors[-1] *= 0
 
         predictions = []
