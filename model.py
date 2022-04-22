@@ -53,13 +53,8 @@ class Image(layers.Layer):
         self.mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
         self.std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
 
-    @tf.function
-    def _decode(self, img_bytes):
-        return tf.map_fn(tf.image.decode_jpeg, img_bytes, dtype=tf.uint8)
-
     def _preprocess(self, img):
-        x = self._decode(img)
-        x = tf.cast(x, tf.float32) / 256
+        x = tf.cast(img, tf.float32) / 256
         return (x-self.mean)/self.std
 
     def call(self, img, training=None):
@@ -184,7 +179,7 @@ def build_model(config):
 
     h, w = config.get('image_height', 224), config.get('image_width', 224)
     item_dummy_inputs = {
-        'image': layers.Input(shape=tf.TensorShape([]), dtype=tf.string),
+        'image': layers.Input(shape=(h, w, 3), dtype=tf.uint8),
         'desc': layers.Input(shape=(config['max_desc_length'],), dtype=tf.int32),
         'info': layers.Input(shape=(len(config['info_size']),), dtype=tf.int32)
     }
@@ -215,7 +210,7 @@ class RecModel(tf.keras.Model):
         self.item_data = {
             'info': tf.constant(item_data['info'], tf.int32),
             'desc': tf.constant(item_data['desc'], tf.int32),
-            'image': tf.constant(item_data['image'], tf.string)
+            'image': tf.constant(item_data['image'], tf.uint8)
         }
 
     def compile(self, optimizer, margin=0.0, gamma=1.0):
