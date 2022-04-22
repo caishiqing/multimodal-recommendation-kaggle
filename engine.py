@@ -74,7 +74,11 @@ class RecEngine:
             max_history_length=self.config.get('max_history_length', 50),
             batch_size=kwargs.get('infer_batch_size', 256)
         )
-        rec_model.fit(dataset, epochs=kwargs.get('epochs', 10), callbacks=[checkpoint])
+        rec_model.fit(
+            dataset, epochs=kwargs.get('epochs', 10),
+            steps_per_epoch=kwargs.get('steps_per_epoch'),
+            callbacks=[checkpoint]
+        )
 
     def infer(self, data: RecData, batch_size: int = 128, top_k=10):
         item_vectors = self.item_model.predict(
