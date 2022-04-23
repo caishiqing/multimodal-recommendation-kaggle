@@ -4,7 +4,7 @@ from tqdm import tqdm
 import numpy as np
 import os
 
-from model import RecModel, build_model
+from model import RecModel, build_model, RecInfer
 from optimizer import AdamWarmup
 from data import RecData
 from evaluate import MAP
@@ -39,10 +39,18 @@ class RecEngine:
         data.prepare_features(self.tokenizer)
         data.prepare_train(test_users)
         dataset = data.train_dataset(batch_size)
+        item_data = {
+            'info': tf.identity(data.info_data),
+            'desc': tf.identity(data.desc_data),
+            'image': tf.identity(data.image_data)
+        }
+        print(item_data['info'].device)
+        print(item_data['desc'].device)
+        print(item_data['image'].device)
         rec_model = RecModel(self.config,
                              self.item_model,
                              self.user_model,
-                             data.item_data)
+                             item_data)
 
         # Save files related to model
         model_config = BertConfig.from_pretrained(self.config.get('bert_path', 'bert-base-uncased'))
@@ -158,46 +166,29 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         self.top_k = top_k
 
     def on_epoch_end(self, epoch, logs):
-        user_test_wrapper = self.data.test_wrapper
-        profile = self.data.profile_data
-        context = self.data.context_data
+        test_wrapper = self.data.test_wrapper
+        trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
+            test_wrapper.trans_indices, maxlen=self.max_history_length, value=-1
+        ).reshape([-1])
+        profile = self.data.profile_data[test_wrapper.user_indices]
+        context = self.data.context_data[trans_indices].reshape([len(profile), -1])
+        item_indices = np.asarray(self.data.trans['item'][trans_indices], np.int32).reshape([len(profile), -1])
+        ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
+            test_wrapper.ground_truth, maxlen=self.top_k,
+            padding='post', truncating='post', value=-1
+        )
 
-        item_vectors=self.model.item_model.predict(
-            self.data.item_data,batch_size=self.batch_size, verbose=1)
+        item_vectors = self.model.item_model.predict(
+            self.model.item_data, batch_size=self.batch_size, verbose=1)
+        # last item for padding
         item_vectors[-1] *= 0
+        item_vectors = tf.identity(item_vectors)
 
-        predictions = []
-        with tqdm(total=len(user_test_wrapper) // self.batch_size, desc='Compute recommendations') as pbar:
-            for i in range(0, len(user_test_wrapper), self.batch_size):
-                pbar.update()
-                j = min(i + self.batch_size, len(user_test_wrapper))
-                batch_profile = profile[user_test_wrapper.user_indices[i:j]]
-                trans_indices = user_test_wrapper.trans_indices[i:j]
-                trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-                    trans_indices, maxlen=self.max_history_length, value=-1
-                ).reshape([-1])
-                item_indices = self.data.trans['item'][trans_indices]
-                batch_context = context[trans_indices].reshape([j-i, self.max_history_length, -1])
-                batch_item_vectors = item_vectors[item_indices].reshape([j-i, self.max_history_length, -1])
-                _, batch_user_vectors = self.model.user_model.predict(
-                    {
-                        'profile': batch_profile,
-                        'context': batch_context,
-                        'items': batch_item_vectors
-                    }
-                )
-                # Apply dot similarity
-                score = np.matmul(batch_user_vectors, item_vectors.T)
-                # Exclude interacted items in history
-                for i, used_items in enumerate(np.asarray(item_indices).reshape([-1, self.max_history_length])):
-                    score[i, used_items] -= 1e-5
+        infer_model = RecInfer(self.model.user_model, item_vectors, top_k=self.top_k)
+        infer_model.compile(metrics=MAP(self.top_k))
+        infer_inputs = {'profile': profile, 'context': context, 'item_indices': item_indices}
+        _, map_score = infer_model.evaluate(infer_inputs, ground_truth)
 
-                # Cut off topk most related items
-                predictions.append(np.argsort(-score, axis=-1)[:, :self.top_k])
-
-        predictions = np.vstack(predictions)
-        map = MAP(self.top_k)(self.data.test_wrapper.ground_truth, predictions)
-        logs[self.monitor] = map
+        logs[self.monitor] = map_score
         super(Checkpoint, self).on_epoch_end(epoch, logs)
-
-        print(self.monitor, ': ', map)
+        print('map@{}: {:.4}'.format(self.top_k, map_score))

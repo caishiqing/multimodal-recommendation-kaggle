@@ -2,16 +2,16 @@ import tensorflow as tf
 import numpy as np
 
 
-class UniteLoss(tf.losses.Loss):
-    """ 统一视角下的 loss """
+class UnifiedLoss(tf.keras.losses.Loss):
+    """ From Circle Loss (CVPR 2019) """
 
-    def __init__(self, margin=0.25, gamma=32, **kwargs):
+    def __init__(self, margin=0, gamma=1, **kwargs):
         """
         Args:
-            margin (float, optional): 间隙
-            gamma (float, optional): 缩放尺度
+            margin (float, optional): Margin between positive and negtive
+            gamma (float, optional): Multiplier of logits
         """
-        super(UniteLoss, self).__init__(**kwargs)
+        super(UnifiedLoss, self).__init__(**kwargs)
         assert 0 <= margin < 1
         assert gamma > 0
 
@@ -19,21 +19,20 @@ class UniteLoss(tf.losses.Loss):
         self.gamma = gamma
 
     def call(self, y_true, y_pred):
-        pos_mask = tf.cast(y_true, tf.float32)
-        neg_mask = 1 - pos_mask
+        pos_index = tf.where(y_true == 1)
+        neg_index = tf.where(y_true == 0)
 
-        logit_p = -y_pred * self.gamma * pos_mask - neg_mask * 1e7
-        logit_n = (y_pred + self.margin) * self.gamma * neg_mask - pos_mask * 1e7
+        sp = tf.gather_nd(y_pred, pos_index)
+        sn = tf.gather_nd(y_pred, neg_index)
 
         loss = tf.math.log(
-            1 + tf.reduce_sum(tf.exp(logit_p), -1) *
-            tf.reduce_sum(tf.exp(logit_n), -1)
+            1 + tf.reduce_sum(tf.math.exp(-self.gamma * sp)) *
+            tf.reduce_sum(tf.math.exp(self.gamma * (sn + self.margin)))
         )
-        loss = tf.nn.softplus(tf.reduce_logsumexp(logit_p, -1) + tf.reduce_logsumexp(logit_n, -1))
-        return tf.reduce_mean(loss)
+        return loss
 
 
-class CircleLoss(UniteLoss):
+class CircleLoss(UnifiedLoss):
     """ Circle Loss: A Unified Perspective of Pair Similarity Optimization - CVPR2020 """
 
     def __init__(self, **kwargs):
@@ -67,63 +66,45 @@ class CircleLoss(UniteLoss):
         return loss
 
 
-class MAP:
-    def __init__(self, top_k=10):
+class MAP(tf.keras.metrics.Mean):
+    def __init__(self, top_k=10, **kwargs):
+        kwargs['name'] = f'MAP@{top_k}'
+        kwargs['dtype'] = tf.float32
+        super(MAP, self).__init__(**kwargs)
         self.top_k = top_k
 
-    def __call__(self, ground_truth, predictions):
-        ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
-            ground_truth, maxlen=self.top_k, value=-1)
-        m = np.sum(ground_truth != -1, axis=1)
+    def update_state(self, ground_truth, predictions, sample_weight=None):
+        # cut off top_k
+        ground_truth = tf.cast(ground_truth, self._dtype)[:, :self.top_k]
+        predictions = tf.cast(predictions, self._dtype)[:, :self.top_k]
 
-        # Exclude no-ground_truth samples
-        valid_index = np.where(m > 0)
-        m = m[valid_index]
-        x = predictions[:, :self.top_k][valid_index]
+        # ground_truth length, mask samples no ground_truth
+        m = tf.reduce_sum(tf.cast(tf.not_equal(ground_truth, -1), tf.float32), axis=-1)
+        sample_weight = tf.where(tf.equal(m, 0), 0, 1)
+        m = tf.where(tf.equal(m, 0), 1.0, m)
 
-        a = np.expand_dims(ground_truth, 2)
-        b = np.expand_dims(x, 1)
-        c = a == b
+        # mask predictions
+        mask = tf.not_equal(predictions, -1)
+        mask = tf.cast(mask, tf.float32)
 
-        rel = np.any(c, axis=1)
-        pre = np.cumsum(rel, axis=-1, dtype=np.float32) / np.array([range(1, self.top_k+1)], np.float32)
-        ap = np.sum(pre*rel, axis=1)/m
-        map = np.mean(ap)
+        a = tf.expand_dims(ground_truth, 2)
+        b = tf.expand_dims(predictions, 1)
+        indicate = tf.equal(a, b)
 
-        return map
+        # indicator equaling 1 if the predicted item at rank k is a relevant (correct) label, 0 otherwise
+        rel = tf.cast(tf.reduce_any(indicate, 1), tf.float32)
+        pred_len = tf.range(1, self.top_k+1, dtype=tf.float32)[tf.newaxis, :]
+        # precision of cut off k
+        pre = tf.cumsum(rel, axis=-1) / pred_len
+        map = tf.reduce_sum(pre*rel*mask, axis=-1) / m
 
-
-class UnifiedLoss(tf.keras.losses.Loss):
-    """ From Circle Loss (CVPR 2019) """
-
-    def __init__(self, margin=0, gamma=1, **kwargs):
-        """
-        Args:
-            margin (float, optional): Margin between positive and negtive
-            gamma (float, optional): Multiplier of logits
-        """
-        super(UnifiedLoss, self).__init__(**kwargs)
-        assert 0 <= margin < 1
-        assert gamma > 0
-
-        self.margin = margin
-        self.gamma = gamma
-
-    def call(self, y_true, y_pred):
-        pos_index = tf.where(y_true == 1)
-        neg_index = tf.where(y_true == 0)
-
-        sp = tf.gather_nd(y_pred, pos_index)
-        sn = tf.gather_nd(y_pred, neg_index)
-
-        loss = tf.math.log(
-            1 + tf.reduce_sum(tf.math.exp(-self.gamma * sp)) *
-            tf.reduce_sum(tf.math.exp(self.gamma * (sn + self.margin)))
-        )
-        return loss
+        return super(MAP, self).update_state(map, sample_weight=sample_weight)
 
 
 if __name__ == '__main__':
-    y_true = tf.constant([1, 1, 0, 0, 0, 1, 0, 0])
-    y_pred = tf.constant([1.6, 0.1, 0.2, -0.5, -0.7, 12.1, -1.2, -0.9])
-    print(UnifiedLoss()(y_true, y_pred))
+    ground_truth = [[1, 2, 3, 4, 5], [6, 7, 8, -1, -1], [-1, -1, -1, -1, -1]]
+    predictions = [[3, 6, 7, 2, 4], [6, 4, 1, 6, -1], [1, 6, 3, 4, 5]]
+
+    map = MAP(5)
+    map.update_state(ground_truth, predictions)
+    print(map.result().numpy())

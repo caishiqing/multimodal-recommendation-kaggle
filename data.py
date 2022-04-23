@@ -113,17 +113,7 @@ class RecData(object):
                 return_attention_mask=False,
                 return_token_type_ids=False
             )['input_ids']
-
-            self.image_data = []
-            with tqdm(total=len(self.items), desc='Converting image') as pbar:
-                imgs = self.items.pop('image')
-                for i in imgs.index:
-                    pbar.update()
-                    img = base64.b64decode(imgs.pop(i))
-                    img = tf.image.resize(tf.image.decode_jpeg(img), (self.config.image_height, self.config.image_width))
-                    self.image_data.append(img.numpy())
-            self.image_data = np.asarray(self.image_data, np.uint8)
-            # self.items['image'] = self.items['image'].map(base64.b64decode)
+            self.items['image'] = self.items['image'].map(base64.b64decode)
             print('Done!')
 
             print('Process user features ...', end='')
@@ -149,9 +139,10 @@ class RecData(object):
         padding = {col: 0 for col in self.items}
         padding['id'] = -1
         padding['desc'] = [0]
-        #padding['image'] = tf.image.encode_jpeg(tf.zeros((self.config.image_height, self.config.image_width, 3), np.uint8)).numpy()
+        padding['image'] = tf.image.encode_jpeg(
+            tf.zeros((self.config.image_height, self.config.image_width, 3), np.uint8)
+        ).numpy()
         self.items.loc[-1] = padding
-        self.image_data = np.vstack([self.image_data, np.zeros((1,) + self.image_data.shape[1:], np.uint8)])
 
         padding = {col: 0 for col in self.users}
         padding['id'] = -1
@@ -203,26 +194,37 @@ class RecData(object):
         print('Test samples: {}'.format(len(self.test_wrapper)))
 
     @property
-    def item_data(self):
-        info = np.asarray(self.items[self.item_feature_dict.keys()], np.int32)
+    def profile_data(self):
+        assert self._processed
+        return np.asarray(self.users[self.user_feature_dict.keys()], np.int32)
+
+    @property
+    def context_data(self):
+        assert self._processed
+        return np.asarray(self.trans[self.trans_feature_dict.keys()], np.int32)
+
+    @property
+    def info_data(self):
+        assert self._processed
+        return np.asarray(self.items[self.item_feature_dict.keys()], np.int32)
+
+    @property
+    def desc_data(self):
+        assert self._processed
         desc = tf.keras.preprocessing.sequence.pad_sequences(
             self.items['desc'], maxlen=self.config.max_desc_length, dtype=np.int32,
             padding='post', truncating='post', value=0
 
         )
-        return {
-            'info': info,
-            'desc': desc,
-            'image': self.image_data
-        }
+        return desc
 
     @property
-    def profile_data(self):
-        return np.asarray(self.users[self.user_feature_dict.keys()], np.int32)
-
-    @property
-    def context_data(self):
-        return np.asarray(self.trans[self.trans_feature_dict.keys()], np.int32)
+    def image_data(self):
+        assert self._processed
+        image = np.asarray(
+            [tf.image.decode_image(img, expand_animations=False).numpy() for img in self.items['image']]
+        )
+        return image
 
     @property
     def infer_wrapper(self):

@@ -205,13 +205,8 @@ class RecModel(tf.keras.Model):
         self.config = config
         self.item_model = item_model
         self.user_model = user_model
-
         # Cache item data to accelarate
-        self.item_data = {
-            'info': tf.constant(item_data['info'], tf.int32),
-            'desc': tf.constant(item_data['desc'], tf.int32),
-            'image': tf.constant(item_data['image'], tf.uint8)
-        }
+        self.item_data = item_data
 
     def compile(self, optimizer, margin=0.0, gamma=1.0):
         super(RecModel, self).compile(optimizer=optimizer)
@@ -289,10 +284,53 @@ class RecModel(tf.keras.Model):
         self.user_model.save_weights(os.path.join(filepath, 'user.h5'), **kwargs)
 
 
+class RecInfer(tf.keras.Model):
+    def __init__(self, user_model, item_vectors,
+                 top_k=10, skip_used_items=False, **kwargs):
+        super(RecInfer, self).__init__(**kwargs)
+        self.user_model = user_model
+        self.item_vectors = item_vectors
+        self.top_k = top_k
+        self.skip_used_items = skip_used_items
+
+        dummy_inputs = {
+            'profile': layers.Input(shape=user_model.input_shape['profile'][1:], dtype=tf.int32),
+            'context': layers.Input(shape=user_model.input_shape['context'][1:], dtype=tf.int32),
+            'item_indices': layers.Input(shape=user_model.input_shape['items'][1:-1], dtype=tf.int32)
+        }
+        self(dummy_inputs)
+
+    def call(self, inputs):
+        batch_size = tf.shape(inputs['item_indices'])[0]
+        seq_length = tf.shape(inputs['item_indices'])[1]
+        item_indices = tf.reshape(inputs.pop('item_indices'), [-1])
+        inputs['items'] = tf.reshape(
+            tf.gather(self.item_vectors, item_indices),
+            [batch_size, seq_length, -1]
+        )
+        _, user_vector = self.user_model(inputs, training=False)
+        score = tf.matmul(user_vector, self.item_vectors, transpose_b=True)
+        print(score)
+        if self.skip_used_items:
+            # mask used_items
+            used_items = tf.reshape(item_indices, [batch_size, seq_length])
+            item_size = tf.shape(self.item_vectors)[0]
+            used_items = tf.reshape(used_items, [-1])
+            mask = tf.one_hot(used_items, depth=item_size, dtype=tf.int8)
+            mask = tf.reshape(mask, [batch_size, -1, item_size])
+            mask = tf.reduce_any(tf.not_equal(mask, 0), axis=1)
+            score -= 1e5*tf.cast(mask, score.dtype)
+
+        recommend = tf.argsort(score, direction='DESCENDING')[:, :self.top_k]
+        return recommend
+
+
 if __name__ == '__main__':
     import numpy as np
+    from evaluate import MAP
+
     config = {
-        'max_history_length': 32,
+        'max_history_length': 16,
         'predict_length': 12,
         'max_desc_length': 8,
         'info_size': [4, 5, 6],
@@ -301,16 +339,14 @@ if __name__ == '__main__':
         'embed_dim': 64,
         'bert_path': 'bert-base-uncased',
         'image_weights': 'imagenet',
-        'image_height': 96,
-        'image_width': 96
+        'image_height': 32,
+        'image_width': 32
     }
 
     item_data = {
         'info': np.random.randint(0, 4, (10, 3)),
         'desc': np.asarray([[0, 1, 2, 3, 4, 5, 6, 7]]*10),
-        'image': tf.map_fn(
-            tf.image.encode_jpeg,
-            tf.ones((10, 96, 96, 3), dtype=tf.uint8), dtype=tf.string).numpy()
+        'image': np.random.randint(0, 255, size=(10, 32, 32, 3))
     }
 
     item_model, user_model = build_model(config)
@@ -325,3 +361,13 @@ if __name__ == '__main__':
         'context': tf.constant([[[1, 2], [3, 4]], [[1, 2], [3, 4]]], dtype=tf.int32)
     }
     loss = rec_model.train_step(inputs)
+
+    item_vectors = tf.identity(item_model.predict(item_data))
+    rec_infer = RecInfer(user_model, item_vectors, top_k=5)
+    rec_infer.compile(metrics=[MAP(5)])
+
+    inputs['item_indices'] = inputs.pop('items')
+    ground_truth = np.array([[1, 2, 3, 4, 5], [3, 4, 5, 6, 7]])
+    print(rec_infer.predict(inputs))
+    results = rec_infer.evaluate(inputs, ground_truth)
+    print(results)
