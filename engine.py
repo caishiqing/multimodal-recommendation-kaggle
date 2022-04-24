@@ -98,10 +98,6 @@ class RecEngine:
         profile = self.data.profile_data[infer_wrapper.user_indices]
         context = self.data.context_data[trans_indices].reshape([len(profile), self.max_history_length, -1])
         item_indices = np.asarray(self.data.trans['item'][trans_indices], np.int32).reshape([len(profile), -1])
-        ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
-            infer_wrapper.ground_truth, maxlen=self.top_k,
-            padding='post', truncating='post', value=-1
-        )
 
         item_vectors = self.item_model.predict(data.item_data, batch_size=self.batch_size)
         # last item for padding
