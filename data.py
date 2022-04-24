@@ -222,7 +222,8 @@ class RecData(object):
     def image_data(self):
         assert self._processed
         image = np.asarray(
-            [tf.image.decode_image(img, expand_animations=False).numpy() for img in self.items['image']]
+            [tf.image.decode_image(img, expand_animations=False).numpy() for img in self.items['image']],
+            dtype=np.uint8
         )
         return image
 
