@@ -90,7 +90,12 @@ class RecEngine:
             callbacks=[checkpoint]
         )
 
-    def infer(self, data: RecData, batch_size: int = 128, top_k=10, skip_used_items=False):
+    def infer(self, data: RecData,
+              batch_size: int = 128,
+              skip_used_items=False,
+              top_k=10,
+              verbose=0):
+
         infer_wrapper = self.data.infer_wrapper
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             infer_wrapper.trans_indices, maxlen=self.max_history_length, value=-1
@@ -99,7 +104,9 @@ class RecEngine:
         context = self.data.context_data[trans_indices].reshape([len(profile), self.max_history_length, -1])
         item_indices = np.asarray(self.data.trans['item'][trans_indices], np.int32).reshape([len(profile), -1])
 
-        item_vectors = self.item_model.predict(data.item_data, batch_size=self.batch_size)
+        item_vectors = self.item_model.predict(data.item_data,
+                                               batch_size=self.batch_size,
+                                               verbose=verbose)
         # last item for padding
         item_vectors[-1] *= 0
         item_vectors = tf.identity(item_vectors)
@@ -110,9 +117,10 @@ class RecEngine:
             top_k=self.top_k,
             skip_used_items=skip_used_items
         )
-        infer_model.compile(metrics=MAP(self.top_k))
         infer_inputs = {'profile': profile, 'context': context, 'item_indices': item_indices}
-        predictions = infer_model.predict(infer_inputs, batch_size=batch_size)
+        predictions = infer_model.predict(infer_inputs,
+                                          batch_size=batch_size,
+                                          verbose=verbose)
 
         return predictions
 
