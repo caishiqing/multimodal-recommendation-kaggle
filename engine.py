@@ -172,7 +172,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             test_wrapper.trans_indices, maxlen=self.max_history_length, value=-1
         ).reshape([-1])
         profile = self.data.profile_data[test_wrapper.user_indices]
-        context = self.data.context_data[trans_indices].reshape([len(profile), -1])
+        context = self.data.context_data[trans_indices].reshape([len(profile), self.max_history_length, -1])
         item_indices = np.asarray(self.data.trans['item'][trans_indices], np.int32).reshape([len(profile), -1])
         ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.ground_truth, maxlen=self.top_k,
