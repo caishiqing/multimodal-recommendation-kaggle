@@ -180,7 +180,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         )
 
         item_vectors = self.model.item_model.predict(
-            self.model.item_data, batch_size=self.batch_size, verbose=1)
+            self.model.item_data, batch_size=self.batch_size)
         # last item for padding
         item_vectors[-1] *= 0
         item_vectors = tf.identity(item_vectors)

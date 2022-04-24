@@ -310,7 +310,6 @@ class RecInfer(tf.keras.Model):
         )
         _, user_vector = self.user_model(inputs, training=False)
         score = tf.matmul(user_vector, self.item_vectors, transpose_b=True)
-        print(score)
         if self.skip_used_items:
             # mask used_items
             used_items = tf.reshape(item_indices, [batch_size, seq_length])
