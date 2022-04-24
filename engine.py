@@ -47,6 +47,7 @@ class RecEngine:
         print(item_data['info'].device)
         print(item_data['desc'].device)
         print(item_data['image'].device)
+        print(self.item_model.trainable_weights[0].device)
         rec_model = RecModel(self.config,
                              self.item_model,
                              self.user_model,
