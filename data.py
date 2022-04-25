@@ -98,32 +98,54 @@ class RecData(object):
         else:
             self._learn_feature_dict()
 
+        self.info_data = None
+        self.desc_data = None
+        self.image_data = None
+        self.profile_data = None
+        self.context_data = None
+
     def prepare_features(self, tokenizer: BertTokenizer):
         if not self._processed:
             print('Process item features ...', end='')
             # length + 1 for padding
-            for key, feat_map in self.item_feature_dict.items():
-                self.items[key] = self.items[key].map(feat_map)
+            info = np.zeros((len(self.items), len(self.info_size)), dtype=np.int32)
+            for i, (key, feat_map) in enumerate(self.item_feature_dict.items()):
+                info[:, i] = self.items.pop(key).map(feat_map)
 
-            self.items['desc'] = tokenizer(
-                self.items['desc'].to_list(),
-                max_length=self.config.max_desc_length,
-                truncation=True,
-                padding=False,
-                return_attention_mask=False,
-                return_token_type_ids=False
-            )['input_ids']
-            self.items['image'] = self.items['image'].map(base64.b64decode)
+            self.info_data = tf.identity(info)
+            self.desc_data = tf.identity(
+                tokenizer(
+                    self.items.pop('desc').to_list(),
+                    max_length=self.config.max_desc_length,
+                    truncation=True,
+                    padding='max_length',
+                    return_attention_mask=False,
+                    return_token_type_ids=False,
+                    return_tensors='np'
+                )['input_ids'])
+
+            def _decode_image(img_bytes):
+                img = tf.image.decode_image(img_bytes, expand_animations=False)
+                img = tf.image.resize(img, size=(self.config.image_height, self.config.image_width))
+                return tf.identity(img)
+
+            self.image_data = tf.identity([_decode_image(img) for img in self.items.pop('image').map(base64.b64decode)])
             print('Done!')
 
             print('Process user features ...', end='')
-            for key, feat_map in self.user_feature_dict.items():
-                self.users[key] = self.users[key].map(feat_map)
+            profile = np.zeros((len(self.users), len(self.profile_size)), dtype=np.int32)
+            for i, (key, feat_map) in enumerate(self.user_feature_dict.items()):
+                profile[:, i] = self.users.pop(key).map(feat_map)
+
+            self.profile_data = tf.identity(profile)
             print('Done!')
 
             print('Process transaction features ...', end='')
-            for key, feat_map in self.trans_feature_dict.items():
-                self.trans[key] = self.trans[key].map(feat_map)
+            context = np.zeros((len(self.trans), len(self.context_size)), dtype=np.int32)
+            for i, (key, feat_map) in enumerate(self.trans_feature_dict.items()):
+                context[:, i] = self.trans.pop(key).map(feat_map)
+
+            self.context_data = tf.identity(context)
             print('Done!')
         else:
             print("Features are aleady prepared.")
@@ -132,29 +154,12 @@ class RecData(object):
 
     @property
     def _processed(self):
-        flag = isinstance(self.items['desc'][0], list)
+        flag = self.info_data is not None
+        flag &= self.desc_data is not None
+        flag &= self.image_data is not None
+        flag &= self.profile_data is not None
+        flag &= self.context_data is not None
         return flag
-
-    def _padding(self):
-        padding = {col: 0 for col in self.items}
-        padding['id'] = -1
-        padding['desc'] = [0]
-        padding['image'] = tf.image.encode_jpeg(
-            tf.zeros((self.config.image_height, self.config.image_width, 3), np.uint8)
-        ).numpy()
-        self.items.loc[-1] = padding
-
-        padding = {col: 0 for col in self.users}
-        padding['id'] = -1
-        self.users.loc[-1] = padding
-
-        padding = {col: 0 for col in self.trans}
-        padding['id'] = -1
-        self.trans.loc[-1] = padding
-
-    @property
-    def _padded(self):
-        return -1 in self.items.index and -1 in self.users.index and -1 in self.trans.index
 
     def prepare_train(self, test_users: list = None):
         if test_users is not None:
@@ -192,42 +197,6 @@ class RecData(object):
 
         print('Train samples: {}'.format(len(self.train_wrapper)))
         print('Test samples: {}'.format(len(self.test_wrapper)))
-
-    @property
-    def profile_data(self):
-        assert self._processed
-        return np.asarray(self.users[self.user_feature_dict.keys()], np.int32)
-
-    @property
-    def context_data(self):
-        assert self._processed
-        return np.asarray(self.trans[self.trans_feature_dict.keys()], np.int32)
-
-    @property
-    def info_data(self):
-        assert self._processed
-        return np.asarray(self.items[self.item_feature_dict.keys()], np.int32)
-
-    @property
-    def desc_data(self):
-        assert self._processed
-        desc = tf.keras.preprocessing.sequence.pad_sequences(
-            self.items['desc'], maxlen=self.config.max_desc_length, dtype=np.int32,
-            padding='post', truncating='post', value=0
-
-        )
-        return desc
-
-    @property
-    def image_data(self):
-        assert self._processed
-
-        def _decode_image(img_bytes):
-            img = tf.image.decode_image(img_bytes, expand_animations=False)
-            img = tf.image.resize(img, size=(self.config.image_height, self.config.image_width))
-            return tf.identity(img)
-
-        return tf.identity([_decode_image(img) for img in self.items['image']])
 
     @property
     def infer_wrapper(self):
@@ -299,23 +268,18 @@ class RecData(object):
         print(info)
 
     def train_dataset(self, batch_size: int = 8):
-        assert self._processed and self._padded
+        assert self._processed
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             self.train_wrapper.trans_indices, maxlen=self.config.max_history_length,
             padding='pre', truncating='pre', value=-1
         ).reshape([-1])
         item_indices = self.trans.iloc[trans_indices]['item']
 
-        profile = self.profile_data[self.train_wrapper.user_indices]
-        context = self.context_data[trans_indices].reshape(
-            [-1, self.config.max_history_length, len(self.context_size)])
-        items = np.asarray(item_indices, np.int32).reshape([-1, self.config.max_history_length])
-
         dataset = tf.data.Dataset.from_tensor_slices(
             {
-                'profile': profile,
-                'context': context,
-                'items': items
+                'user': np.asarray(self.train_wrapper.user_indices, dtype=np.int32),
+                'trans': trans_indices,
+                'items': np.asarray(item_indices, np.int32).reshape([-1, self.config.max_history_length])
             }
         ).shuffle(2*batch_size).batch(batch_size)
 

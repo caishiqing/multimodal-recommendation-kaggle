@@ -200,13 +200,17 @@ def build_model(config):
 class RecModel(tf.keras.Model):
     """ Recommendation Model for Training """
 
-    def __init__(self, config, item_model, user_model, item_data, **kwargs):
+    def __init__(self, config, item_model, user_model,
+                 item_data, user_data, trans_data,
+                 **kwargs):
         super(RecModel, self).__init__(**kwargs)
         self.config = config
         self.item_model = item_model
         self.user_model = user_model
         # Cache item data to accelarate
         self.item_data = item_data
+        self.user_data = user_data
+        self.trans_data = trans_data
 
     def compile(self, optimizer, margin=0.0, gamma=1.0):
         super(RecModel, self).compile(optimizer=optimizer)
@@ -234,12 +238,15 @@ class RecModel(tf.keras.Model):
             item_vectors *= tf.expand_dims(tf.cast(pad_mask, tf.float32), -1)
             item_vectors = tf.reshape(item_vectors, [batch_size, seq_length, -1])
 
+            trans_indices = tf.reshape(tf.gather(self.trans_data['context'], inputs['trans']), [-1])
+            context = tf.gather(self.trans_data['context'], inputs['trans'])
+
             # compute user vectors
             state_seq, _ = self.user_model(
                 {
-                    'profile': inputs['profile'],
-                    'items': item_vectors,
-                    'context': inputs['context']
+                    'profile': tf.gather(self.user_data['profile'], inputs['user']),
+                    'items': tf.reshape(item_vectors, [batch_size, seq_length, -1]),
+                    'context': tf.reshape(context, [batch_size, seq_length, -1])
                 },
                 training=True
             )
