@@ -98,11 +98,9 @@ class RecData(object):
         else:
             self._learn_feature_dict()
 
-        self.info_data = None
-        self.desc_data = None
-        self.image_data = None
-        self.profile_data = None
-        self.context_data = None
+        self.item_data = None
+        self.user_data = None
+        self.trans_data = None
 
     def prepare_features(self, tokenizer: BertTokenizer):
         if not self._processed:
@@ -112,8 +110,8 @@ class RecData(object):
             for i, (key, feat_map) in enumerate(self.item_feature_dict.items()):
                 info[:, i] = self.items.pop(key).map(feat_map)
 
-            self.info_data = tf.identity(info)
-            self.desc_data = tf.identity(
+            info = tf.identity(info)
+            desc = tf.identity(
                 tokenizer(
                     self.items.pop('desc').to_list(),
                     max_length=self.config.max_desc_length,
@@ -129,7 +127,9 @@ class RecData(object):
                 img = tf.image.resize(img, size=(self.config.image_height, self.config.image_width))
                 return tf.identity(img)
 
-            self.image_data = tf.identity([_decode_image(img) for img in self.items.pop('image').map(base64.b64decode)])
+            image = tf.identity([_decode_image(img) for img in self.items.pop('image').map(base64.b64decode)])
+            # cache item data as tensor to speed lookup
+            self.item_data = {'info': info, 'desc': desc, 'image': image}
             print('Done!')
 
             print('Process user features ...', end='')
@@ -137,7 +137,7 @@ class RecData(object):
             for i, (key, feat_map) in enumerate(self.user_feature_dict.items()):
                 profile[:, i] = self.users.pop(key).map(feat_map)
 
-            self.profile_data = tf.identity(profile)
+            self.user_data = {'profile': tf.identity(profile)}
             print('Done!')
 
             print('Process transaction features ...', end='')
@@ -145,18 +145,16 @@ class RecData(object):
             for i, (key, feat_map) in enumerate(self.trans_feature_dict.items()):
                 context[:, i] = self.trans.pop(key).map(feat_map)
 
-            self.context_data = tf.identity(context)
+            self.trans_data = {'context': tf.identity(context)}
             print('Done!')
         else:
             print("Features are aleady prepared.")
 
     @property
     def _processed(self):
-        flag = self.info_data is not None
-        flag &= self.desc_data is not None
-        flag &= self.image_data is not None
-        flag &= self.profile_data is not None
-        flag &= self.context_data is not None
+        flag = self.item_data is not None
+        flag &= self.user_data is not None
+        flag &= self.trans_data is not None
         return flag
 
     def prepare_train(self, test_users: list = None):
@@ -275,8 +273,9 @@ class RecData(object):
 
         dataset = tf.data.Dataset.from_tensor_slices(
             {
-                'user': np.asarray(self.train_wrapper.user_indices, dtype=np.int32),
-                'trans': trans_indices.reshape([-1, self.config.max_history_length]),
+                'profile': self.user_data['profile'][self.train_wrapper.user_indices],
+                'context': self.trans_data['context'][trans_indices].reshape(
+                    [len(self.train_wrapper), self.config.max_history_length, -1]),
                 'items': np.asarray(item_indices, np.int32).reshape([-1, self.config.max_history_length])
             }
         ).shuffle(2*batch_size).batch(batch_size)

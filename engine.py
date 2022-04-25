@@ -44,14 +44,11 @@ class RecEngine:
             'desc': data.desc_data,
             'image': data.image_data
         }
-        user_data = {'profile': data.profile_data}
-        trans_data = {'context': data.context_data}
         print(item_data['info'].device)
         print(item_data['desc'].device)
         print(item_data['image'].device)
         print(self.item_model.trainable_weights[0].device)
-        rec_model = RecModel(self.config, self.item_model, self.user_model,
-                             item_data, user_data, trans_data)
+        rec_model = RecModel(self.config, self.item_model, self.user_model, item_data)
 
         # Save files related to model
         model_config = BertConfig.from_pretrained(self.config.get('bert_path', 'bert-base-uncased'))
@@ -100,8 +97,9 @@ class RecEngine:
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             infer_wrapper.trans_indices, maxlen=self.max_history_length, value=-1
         ).reshape([-1])
-        profile = self.data.profile_data[infer_wrapper.user_indices]
-        context = self.data.context_data[trans_indices].reshape([len(profile), self.max_history_length, -1])
+        profile = self.data.user_data['profile'][infer_wrapper.user_indices]
+        context = self.data.trans_data['context'][trans_indices].reshape(
+            [len(profile), self.max_history_length, -1])
         item_indices = np.asarray(self.data.trans['item'][trans_indices], np.int32).reshape([len(profile), -1])
 
         item_vectors = self.item_model.predict(data.item_data,
@@ -154,11 +152,8 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.trans_indices, maxlen=self.max_history_length, value=-1
         ).reshape([-1])
-        profile = tf.gather(self.data.profile_data, test_wrapper.user_indices)
-        context = tf.gather(self.data.context_data, trans_indices)
-        context = tf.reshape(context, [len(test_wrapper), self.max_history_length, -1])
         item_indices = np.asarray(
-            self.data.trans['item'][trans_indices],
+            self.data.trans.iloc[trans_indices]['item'],
             np.int32).reshape([len(test_wrapper), -1])
         ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.ground_truth, maxlen=self.top_k,
@@ -168,6 +163,10 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         item_vectors = self.model.item_model.predict(
             self.model.item_data, batch_size=self.batch_size)
         item_vectors = tf.identity(item_vectors)
+
+        profile = self.data.user_data['profile'][test_wrapper.user_indices]
+        context = self.data.trans_data['context'][trans_indices].reshape(
+            [len(test_wrapper), self.max_history_length, -1])
 
         infer_model = RecInfer(
             self.model.user_model,

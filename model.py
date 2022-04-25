@@ -200,17 +200,13 @@ def build_model(config):
 class RecModel(tf.keras.Model):
     """ Recommendation Model for Training """
 
-    def __init__(self, config, item_model, user_model,
-                 item_data, user_data, trans_data,
-                 **kwargs):
+    def __init__(self, config, item_model, user_model, item_data, **kwargs):
         super(RecModel, self).__init__(**kwargs)
         self.config = config
         self.item_model = item_model
         self.user_model = user_model
         # Cache item data to accelarate
         self.item_data = item_data
-        self.user_data = user_data
-        self.trans_data = trans_data
 
     def compile(self, optimizer, margin=0.0, gamma=1.0):
         super(RecModel, self).compile(optimizer=optimizer)
@@ -225,7 +221,7 @@ class RecModel(tf.keras.Model):
             batch_size = tf.shape(inputs['items'])[0]
             seq_length = tf.shape(inputs['items'])[1]
             # compute item vectors
-            item_indices = tf.reshape(inputs['items'], [-1])
+            item_indices = tf.reshape(inputs.pop('items'), [-1])
             pad_mask = tf.not_equal(item_indices, -1)
             item_vectors = self.item_model(
                 {
@@ -237,19 +233,10 @@ class RecModel(tf.keras.Model):
             )
             item_vectors *= tf.expand_dims(tf.cast(pad_mask, tf.float32), -1)
             item_vectors = tf.reshape(item_vectors, [batch_size, seq_length, -1])
-
-            trans_indices = tf.reshape(tf.gather(self.trans_data['context'], inputs['trans']), [-1])
-            context = tf.gather(self.trans_data['context'], inputs['trans'])
+            inputs['items'] = item_vectors
 
             # compute user vectors
-            state_seq, _ = self.user_model(
-                {
-                    'profile': tf.gather(self.user_data['profile'], inputs['user']),
-                    'items': tf.reshape(item_vectors, [batch_size, seq_length, -1]),
-                    'context': tf.reshape(context, [batch_size, seq_length, -1])
-                },
-                training=True
-            )
+            state_seq, _ = self.user_model(inputs, training=True)
 
             batch_idx = tf.range(0, batch_size)
             length_idx = tf.range(0, seq_length)
