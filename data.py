@@ -225,10 +225,9 @@ class RecData(object):
         def _decode_image(img_bytes):
             img = tf.image.decode_image(img_bytes, expand_animations=False)
             img = tf.image.resize(img, size=(self.config.image_height, self.config.image_width))
-            return img.numpy()
+            return tf.identity(img)
 
-        image = np.asarray([_decode_image(img) for img in self.items['image']], dtype=np.uint8)
-        return image
+        return tf.identity([_decode_image(img) for img in self.items['image']])
 
     @property
     def infer_wrapper(self):
