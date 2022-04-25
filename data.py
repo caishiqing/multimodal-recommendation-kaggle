@@ -150,8 +150,6 @@ class RecData(object):
         else:
             print("Features are aleady prepared.")
 
-        self._padding()
-
     @property
     def _processed(self):
         flag = self.info_data is not None
