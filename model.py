@@ -221,7 +221,7 @@ class RecModel(tf.keras.Model):
             batch_size = tf.shape(inputs['items'])[0]
             seq_length = tf.shape(inputs['items'])[1]
             # compute item vectors
-            item_indices = tf.reshape(inputs.pop('items'), [-1])
+            item_indices = tf.reshape(inputs['items'], [-1])
             pad_mask = tf.not_equal(item_indices, -1)
             item_vectors = self.item_model(
                 {
@@ -233,10 +233,16 @@ class RecModel(tf.keras.Model):
             )
             item_vectors *= tf.expand_dims(tf.cast(pad_mask, tf.float32), -1)
             item_vectors = tf.reshape(item_vectors, [batch_size, seq_length, -1])
-            inputs['items'] = item_vectors
 
             # compute user vectors
-            state_seq, _ = self.user_model(inputs, training=True)
+            state_seq, _ = self.user_model(
+                {
+                    'profile': inputs['profile'],
+                    'context': inputs['context'],
+                    'items': item_vectors
+                },
+                training=True
+            )
 
             batch_idx = tf.range(0, batch_size)
             length_idx = tf.range(0, seq_length)
