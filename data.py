@@ -137,7 +137,7 @@ class RecData(object):
             for i, (key, feat_map) in enumerate(self.user_feature_dict.items()):
                 profile[:, i] = self.users.pop(key).map(feat_map)
 
-            self.user_data = {'profile': tf.identity(profile)}
+            self.user_data = {'profile': profile}
             print('Done!')
 
             print('Process transaction features ...', end='')
@@ -145,7 +145,7 @@ class RecData(object):
             for i, (key, feat_map) in enumerate(self.trans_feature_dict.items()):
                 context[:, i] = self.trans.pop(key).map(feat_map)
 
-            self.trans_data = {'context': tf.identity(context)}
+            self.trans_data = {'context': context}
             self.trans.loc[-1] = {'item': -1, 'user': -1}  # for padding indice
             print('Done!')
         else:
