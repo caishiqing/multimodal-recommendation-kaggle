@@ -144,12 +144,15 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
 
     def on_epoch_end(self, epoch, logs):
         test_wrapper = self.data.test_wrapper
+        # use latest transactions for estimating
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-            test_wrapper.trans_indices, maxlen=self.max_history_length, value=-1
+            test_wrapper.trans_indices, maxlen=self.max_history_length,
+            padding='pre', truncating='pre', value=-1
         ).reshape([-1])
         item_indices = np.asarray(
             self.data.trans.iloc[trans_indices]['item'],
             np.int32).reshape([len(test_wrapper), -1])
+        # use earlest interacted items for ground truth
         ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.ground_truth, maxlen=self.top_k,
             padding='post', truncating='post', value=-1
