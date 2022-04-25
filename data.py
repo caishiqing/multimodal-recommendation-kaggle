@@ -276,7 +276,7 @@ class RecData(object):
         dataset = tf.data.Dataset.from_tensor_slices(
             {
                 'user': np.asarray(self.train_wrapper.user_indices, dtype=np.int32),
-                'trans': trans_indices,
+                'trans': trans_indices.reshape([-1, self.config.max_history_length]),
                 'items': np.asarray(item_indices, np.int32).reshape([-1, self.config.max_history_length])
             }
         ).shuffle(2*batch_size).batch(batch_size)
