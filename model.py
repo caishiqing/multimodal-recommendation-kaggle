@@ -257,10 +257,18 @@ class RecModel(tf.keras.Model):
                 tf.logical_or(
                     tf.greater_equal(b, d), tf.greater(d-b, self.config['predict_length']))
             )
-            prd_mask = tf.reshape(prd_mask, [batch_size, seq_length, -1])
-            prd_mask = tf.logical_not(prd_mask)  # mask history item
+            prd_mask = tf.reshape(prd_mask, [batch_size, seq_length, -1])  # (batch, len, batch * len)
+            prd_mask = tf.logical_not(prd_mask)
             pad_mask = pad_mask[tf.newaxis, tf.newaxis, :]
-            mask = tf.logical_and(pad_mask, prd_mask)  # (batch, len, batch * len)
+
+            # mask same items
+            items_a = inputs['items'][:, :, tf.newaxis, tf.newaxis]
+            items_b = inputs['items'][tf.newaxis, tf.newaxis, :, :]
+            same_mask = tf.not_equal(items_a, items_b)
+            same_mask = tf.reshape(same_mask, [batch_size, seq_length, -1])  # (batch, len, batch * len)
+
+            # (batch, len, batch * len)
+            mask = tf.logical_and(tf.logical_and(pad_mask, prd_mask), same_mask)
 
             # compute logits
             item_vectors = tf.reshape(item_vectors, [-1, self.config['embed_dim']])  # (batch * len, dim)
