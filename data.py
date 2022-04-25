@@ -146,6 +146,7 @@ class RecData(object):
                 context[:, i] = self.trans.pop(key).map(feat_map)
 
             self.trans_data = {'context': tf.identity(context)}
+            self.trans.loc[-1] = {'item': -1, 'user': -1}  # for padding indice
             print('Done!')
         else:
             print("Features are aleady prepared.")
