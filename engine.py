@@ -144,7 +144,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
 
     def on_epoch_end(self, epoch, logs):
         test_wrapper = self.data.test_wrapper
-        # use latest transactions for estimating
+        # use latest history transactions for observation
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.trans_indices, maxlen=self.max_history_length,
             padding='pre', truncating='pre', value=-1
@@ -152,7 +152,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         item_indices = np.asarray(
             self.data.trans.iloc[trans_indices]['item'],
             np.int32).reshape([len(test_wrapper), -1])
-        # use earlest interacted items for ground truth
+        # use earlest future transactions for forecasting
         ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.ground_truth, maxlen=self.top_k,
             padding='post', truncating='post', value=-1
@@ -178,4 +178,4 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
 
         logs[self.monitor] = map_score
         super(Checkpoint, self).on_epoch_end(epoch, logs)
-        print('map@{}: {:.4}'.format(self.top_k, map_score))
+        print('{}: {:.4}'.format(self.monitor, map_score))

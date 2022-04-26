@@ -3,7 +3,7 @@ import numpy as np
 
 
 class UnifiedLoss(tf.keras.losses.Loss):
-    """ From Circle Loss (CVPR 2019) """
+    """ From Circle Loss (CVPR 2020) """
 
     def __init__(self, margin=0, gamma=1, **kwargs):
         """
