@@ -57,7 +57,8 @@ class RecEngine:
         optimizer = AdamWarmup(
             warmup_steps=int(total_steps * kwargs.get('warmup_proportion', 0.1)),
             decay_steps=total_steps - int(total_steps * kwargs.get('warmup_proportion', 0.1)),
-            initial_learning_rate=kwargs.get('learning_rate', 1e-4)
+            initial_learning_rate=kwargs.get('learning_rate', 1e-4),
+            lr_multiply=kwargs.get('lr_multiply')
         )
         rec_model.compile(
             optimizer=optimizer,
@@ -88,32 +89,30 @@ class RecEngine:
               top_k=10,
               verbose=0):
 
-        infer_wrapper = self.data.infer_wrapper
+        infer_wrapper = data.infer_wrapper
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-            infer_wrapper.trans_indices, maxlen=self.max_history_length, value=-1
+            infer_wrapper.trans_indices, maxlen=self.config.get('max_history_length', 50), value=-1
         ).reshape([-1])
-        profile = self.data.user_data['profile'][infer_wrapper.user_indices]
-        context = self.data.trans_data['context'][trans_indices].reshape(
-            [len(profile), self.max_history_length, -1])
+        profile = data.user_data['profile'][infer_wrapper.user_indices]
+        context = data.trans_data['context'][trans_indices].reshape(
+            [len(profile), self.config.get('max_history_length', 50), -1])
         item_indices = np.asarray(
-            self.data.trans.iloc[trans_indices]['item'], np.int32
+            data.trans.iloc[trans_indices]['item'], np.int32
         ).reshape([len(profile), -1])
 
         item_vectors = self.item_model.predict(data.item_data,
-                                               batch_size=self.batch_size,
+                                               batch_size=batch_size,
                                                verbose=verbose)
         item_vectors = tf.identity(item_vectors)
 
         infer_model = RecInfer(
-            self.model.user_model,
+            self.user_model,
             item_vectors,
-            top_k=self.top_k,
+            top_k=top_k,
             skip_used_items=skip_used_items
         )
         infer_inputs = {'profile': profile, 'context': context, 'item_indices': item_indices}
-        predictions = infer_model.predict(infer_inputs,
-                                          batch_size=batch_size,
-                                          verbose=verbose)
+        predictions = infer_model.predict(infer_inputs, batch_size=batch_size, verbose=verbose)
 
         return predictions
 

@@ -1,4 +1,5 @@
 import tensorflow as tf
+import re
 
 __all__ = [
     'WarmUpSchedule', 'AdamWarmup',
@@ -51,6 +52,7 @@ class AdamWarmup(tf.keras.optimizers.Adam):
     def __init__(self, warmup_steps, decay_steps,
                  initial_learning_rate=1e-3,
                  end_learning_rate=1e-6,
+                 lr_multiply=None,
                  **kwargs):
 
         decay_schedule_fn = tf.keras.optimizers.schedules.PolynomialDecay(
@@ -61,3 +63,15 @@ class AdamWarmup(tf.keras.optimizers.Adam):
         )
         kwargs['learning_rate'] = learning_schedule_fn
         super(AdamWarmup, self).__init__(**kwargs)
+
+        # {regexp: x.x}
+        self.lr_multiply = lr_multiply if lr_multiply else {}
+
+    def _resource_apply_dense(self, grad, var, apply_state=None):
+        # Different lr for defferent variables
+        if apply_state and self.lr_multiply:
+            for regexp, multiply in self.lr_multiply.items():
+                if re.search(regexp, var.name):
+                    apply_state['lr_t'] *= multiply
+
+        super(AdamWarmup, self)._resource_apply_dense(grad, var, apply_state)

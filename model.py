@@ -362,6 +362,13 @@ if __name__ == '__main__':
     rec_model = RecModel(config, item_model, user_model, item_data)
     rec_model.compile('adam')
 
+    # for w in item_model.trainable_weights:
+    #     print(w.name)
+
+    # print('\n\n')
+    # for w in user_model.trainable_weights:
+    #     print(w.name)
+
     inputs = {
         'items': tf.constant([[1, 3], [2, 5]], dtype=tf.int32),
         'profile': tf.constant([[1, 2], [0, 2]], dtype=tf.int32),
@@ -369,12 +376,12 @@ if __name__ == '__main__':
     }
     loss = rec_model.train_step(inputs)
 
-    item_vectors = tf.identity(item_model.predict(item_data))
-    rec_infer = RecInfer(user_model, item_vectors, top_k=5)
-    rec_infer.compile(metrics=[MAP(5)])
+    # item_vectors = tf.identity(item_model.predict(item_data))
+    # rec_infer = RecInfer(user_model, item_vectors, top_k=5)
+    # rec_infer.compile(metrics=[MAP(5)])
 
-    inputs['item_indices'] = inputs.pop('items')
-    ground_truth = np.array([[1, 2, 3, 4, 5], [3, 4, 5, 6, 7]])
-    print(rec_infer.predict(inputs))
-    results = rec_infer.evaluate(inputs, ground_truth)
-    print(results)
+    # inputs['item_indices'] = inputs.pop('items')
+    # ground_truth = np.array([[1, 2, 3, 4, 5], [3, 4, 5, 6, 7]])
+    # print(rec_infer.predict(inputs))
+    # results = rec_infer.evaluate(inputs, ground_truth)
+    # print(results)
