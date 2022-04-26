@@ -251,7 +251,7 @@ class RecModel(tf.keras.Model):
             c = batch_idx[tf.newaxis, tf.newaxis, :, tf.newaxis]
             d = length_idx[tf.newaxis, tf.newaxis, tf.newaxis, :]
 
-            # mask history items and items out of predict window for prediction
+            # mask history items and items out of prediction length
             prd_mask = tf.logical_and(
                 tf.equal(a, c),
                 tf.logical_or(
@@ -277,7 +277,7 @@ class RecModel(tf.keras.Model):
             # compute labels
             labels = tf.tile(tf.equal(a, c), [1, seq_length, 1, seq_length])
             labels = tf.cast(tf.reshape(labels, [batch_size, seq_length, -1]), tf.float32)
-            labels *= tf.cast(tf.where(mask, labels, -1), labels.dtype)
+            labels = tf.cast(tf.where(mask, labels, -1), labels.dtype)
 
             loss = self.loss_fn(labels, logits)
 
