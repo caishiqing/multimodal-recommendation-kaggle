@@ -128,7 +128,7 @@ class Item(tf.keras.Model):
         return x
 
     def compute_output_shape(self, input_shape):
-        return input_shape[0], self.embed_dim
+        return input_shape[0], self.desc_model.embed_dim
 
 
 class User(tf.keras.Model):
