@@ -73,5 +73,6 @@ class AdamWarmup(tf.keras.optimizers.Adam):
             for regexp, multiply in self.lr_multiply.items():
                 if re.search(regexp, var.name):
                     apply_state['lr_t'] *= multiply
+                    break
 
         super(AdamWarmup, self)._resource_apply_dense(grad, var, apply_state)
