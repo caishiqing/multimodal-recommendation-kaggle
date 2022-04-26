@@ -69,10 +69,14 @@ class AdamWarmup(tf.keras.optimizers.Adam):
 
     def _resource_apply_dense(self, grad, var, apply_state=None):
         # Different lr for defferent variables
-        if apply_state and self.lr_multiply:
+        var_device, var_dtype = var.device, var.dtype.base_dtype
+        if not apply_state:
+            apply_state = {(var_device, var_dtype): self._fallback_apply_state(var_device, var_dtype)}
+
+        if self.lr_multiply:
             for regexp, multiply in self.lr_multiply.items():
                 if re.search(regexp, var.name):
-                    apply_state['lr_t'] *= multiply
+                    apply_state[(var_device, var_dtype)]['lr_t'] *= multiply
                     break
 
-        super(AdamWarmup, self)._resource_apply_dense(grad, var, apply_state)
+        return super(AdamWarmup, self)._resource_apply_dense(grad, var, apply_state=apply_state)

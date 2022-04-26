@@ -335,6 +335,7 @@ class RecInfer(tf.keras.Model):
 if __name__ == '__main__':
     import numpy as np
     from evaluate import MAP
+    from optimizer import AdamWarmup
 
     config = {
         'max_history_length': 16,
@@ -360,21 +361,21 @@ if __name__ == '__main__':
     item_model.summary()
     user_model.summary()
     rec_model = RecModel(config, item_model, user_model, item_data)
-    rec_model.compile('adam')
+    rec_model.compile(AdamWarmup(100, 1000, lr_multiply={'bert': 0.01, 'conv': 0.1}))
 
-    for w in item_model.trainable_weights:
-        print(w.name)
+    # for w in item_model.trainable_weights:
+    #     print(w.name)
 
-    print('\n\n')
-    for w in user_model.trainable_weights:
-        print(w.name)
+    # print('\n\n')
+    # for w in user_model.trainable_weights:
+    #     print(w.name)
 
-    # inputs = {
-    #     'items': tf.constant([[1, 3], [2, 5]], dtype=tf.int32),
-    #     'profile': tf.constant([[1, 2], [0, 2]], dtype=tf.int32),
-    #     'context': tf.constant([[[1, 2], [3, 4]], [[1, 2], [3, 4]]], dtype=tf.int32)
-    # }
-    # loss = rec_model.train_step(inputs)
+    inputs = {
+        'items': tf.constant([[1, 3], [2, 5]], dtype=tf.int32),
+        'profile': tf.constant([[1, 2], [0, 2]], dtype=tf.int32),
+        'context': tf.constant([[[1, 2], [3, 4]], [[1, 2], [3, 4]]], dtype=tf.int32)
+    }
+    loss = rec_model.train_step(inputs)
 
     # item_vectors = tf.identity(item_model.predict(item_data))
     # rec_infer = RecInfer(user_model, item_vectors, top_k=5)
