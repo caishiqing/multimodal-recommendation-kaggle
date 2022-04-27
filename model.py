@@ -208,6 +208,11 @@ class RecModel(tf.keras.Model):
         # Cache item data to accelarate
         self.item_data = item_data
 
+        print(self.item_data['info'].device)
+        print(self.item_data['desc'].device)
+        print(self.item_data['image'].device)
+        print(self.item_model.trainable_weights[0].device)
+
     def compile(self, optimizer, margin=0.0, gamma=1.0):
         super(RecModel, self).compile(optimizer=optimizer)
         self.loss_fn = UnifiedLoss(

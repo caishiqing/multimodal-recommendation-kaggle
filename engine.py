@@ -39,10 +39,6 @@ class RecEngine:
         data.prepare_features(self.tokenizer)
         data.prepare_train(test_users)
         dataset = data.train_dataset(batch_size)
-        print(data.item_data['info'].device)
-        print(data.item_data['desc'].device)
-        print(data.item_data['image'].device)
-        print(self.item_model.trainable_weights[0].device)
         rec_model = RecModel(self.config, self.item_model, self.user_model, data.item_data)
 
         # Save files related to model
