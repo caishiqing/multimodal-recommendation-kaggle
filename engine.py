@@ -62,6 +62,7 @@ class RecEngine:
             margin=kwargs.get('margin', 0.0),
             gamma=kwargs.get('gamma', 1.0)
         )
+
         self.item_model.summary()
         self.user_model.summary()
 
@@ -72,12 +73,14 @@ class RecEngine:
             top_k=kwargs.get('top_k', top_k),
             max_history_length=self.config.get('max_history_length', 50),
             batch_size=kwargs.get('infer_batch_size', 256),
-            skip_used_items=kwargs.get('skip_used_items', False)
+            skip_used_items=kwargs.get('skip_used_items', False),
+            verbose=kwargs.get('verbose', 1)
         )
         rec_model.fit(
             dataset, epochs=kwargs.get('epochs', 10),
             steps_per_epoch=kwargs.get('steps_per_epoch'),
-            callbacks=[checkpoint]
+            callbacks=[checkpoint],
+            verbose=kwargs.get('verbose', 1)
         )
 
     def infer(self, data: RecData,
@@ -85,6 +88,9 @@ class RecEngine:
               skip_used_items=False,
               top_k=10,
               verbose=0):
+
+        with tf.device(self.item_model.trainable_weights[0].device):
+            data.prepare_features(self.tokenizer)
 
         infer_wrapper = data.infer_wrapper
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
@@ -121,6 +127,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                  max_history_length: int = 50,
                  batch_size: int = 256,
                  skip_used_items: bool = False,
+                 verbose: int = 1,
                  **kwargs):
 
         monitor = f'MAP@{top_k}'
@@ -137,6 +144,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         self.batch_size = batch_size
         self.top_k = top_k
         self.skip_used_items = skip_used_items
+        self.verbose = verbose
 
     def on_epoch_end(self, epoch, logs):
         test_wrapper = self.data.test_wrapper
@@ -170,7 +178,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         )
         infer_model.compile(metrics=MAP(self.top_k))
         infer_inputs = {'profile': profile, 'context': context, 'item_indices': item_indices}
-        _, map_score = infer_model.evaluate(infer_inputs, ground_truth)
+        _, map_score = infer_model.evaluate(infer_inputs, ground_truth, verbose=self.verbose)
 
         logs[self.monitor] = map_score
         super(Checkpoint, self).on_epoch_end(epoch, logs)
