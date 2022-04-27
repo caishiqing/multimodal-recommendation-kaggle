@@ -36,7 +36,8 @@ class RecEngine:
         os.makedirs(save_path, exist_ok=True)
         batch_size = kwargs.get('batch_size', 32)
 
-        data.prepare_features(self.tokenizer)
+        with tf.device(self.item_model.trainable_weights[0].device):
+            data.prepare_features(self.tokenizer)
         data.prepare_train(test_users)
         dataset = data.train_dataset(batch_size)
         rec_model = RecModel(self.config, self.item_model, self.user_model, data.item_data)
