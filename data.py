@@ -76,7 +76,7 @@ class RecData(object):
         self.train_wrapper = DataWrapper()
         self.test_wrapper = DataWrapper()
 
-        self.config = build_config(config)
+        self.config = config
         self.resize_image = resize_image
 
         self.items = items
@@ -114,7 +114,7 @@ class RecData(object):
             desc = tf.identity(
                 tokenizer(
                     self.items.pop('desc').to_list(),
-                    max_length=self.config.max_desc_length,
+                    max_length=self.config.get('max_desc_length', 8),
                     truncation=True,
                     padding='max_length',
                     return_attention_mask=False,
@@ -124,7 +124,7 @@ class RecData(object):
 
             def _decode_image(img_bytes):
                 img = tf.image.decode_image(img_bytes, expand_animations=False)
-                img = tf.image.resize(img, size=(self.config.image_height, self.config.image_width))
+                img = tf.image.resize(img, size=(self.config['image_height'], self.config['image_width']))
                 return tf.identity(img)
 
             image = tf.identity([_decode_image(img) for img in self.items.pop('image').map(base64.b64decode)])
@@ -168,22 +168,22 @@ class RecData(object):
                 pbar.update()
                 trans_indices = df.index.to_list()
                 item_indices = df['item'].to_list()
-                if len(trans_indices) < self.config.max_history_length or (test_users is not None and user_idx in test_users):
+                if len(trans_indices) < self.config.get('max_history_length', 32) or (test_users is not None and user_idx in test_users):
                     # test sample
                     if len(trans_indices) == 1:
                         # no transactions, only use profile
                         self.test_wrapper.append(user_idx, [], item_indices)
-                    elif len(df) < self.config.top_k:
+                    elif len(df) < self.config.get('top_k', 10):
                         self.test_wrapper.append(user_idx, trans_indices[:1], item_indices[1:])
                     else:
                         self.test_wrapper.append(
                             user_idx,
-                            trans_indices[:-self.config.top_k],
-                            item_indices[-self.config.top_k:]
+                            trans_indices[:-self.config.get('top_k', 10)],
+                            item_indices[-self.config.get('top_k', 10):]
                         )
                 else:
                     # train sample
-                    cut_offset = max(len(trans_indices)-self.config.top_k, self.config.max_history_length)
+                    cut_offset = max(len(trans_indices)-self.config.get('top_k', 10), self.config.get('max_history_length', 32))
                     self.train_wrapper.append(user_idx, trans_indices[:cut_offset])
                     if cut_offset < len(trans_indices):
                         # cut off for test
@@ -231,14 +231,16 @@ class RecData(object):
     def _learn_feature_dict(self):
         for col in self.items.columns:
             if col in self._sys_fields:
-                continue
+                if col != 'id' or not self.config.get('use_item_id'):
+                    continue
             vals = set(self.items[col])
             self.item_feature_dict[col] = OrderedDict(
                 [(val, i) for i, val in enumerate(sorted(vals))])
 
         for col in self.users.columns:
             if col in self._sys_fields:
-                continue
+                if col != 'id' or not self.config.get('use_user_id'):
+                    continue
             vals = set(self.users[col])
             self.user_feature_dict[col] = OrderedDict(
                 [(val, i) for i, val in enumerate(sorted(vals))])
@@ -267,7 +269,7 @@ class RecData(object):
     def train_dataset(self, batch_size: int = 8):
         assert self._processed
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-            self.train_wrapper.trans_indices, maxlen=self.config.max_history_length,
+            self.train_wrapper.trans_indices, maxlen=self.config.get('max_history_length', 32),
             padding='pre', truncating='pre', value=-1
         ).reshape([-1])
         item_indices = self.trans.iloc[trans_indices]['item']
@@ -276,8 +278,8 @@ class RecData(object):
             {
                 'profile': self.user_data['profile'][self.train_wrapper.user_indices],
                 'context': self.trans_data['context'][trans_indices].reshape(
-                    [len(self.train_wrapper), self.config.max_history_length, -1]),
-                'items': np.asarray(item_indices, np.int32).reshape([-1, self.config.max_history_length])
+                    [len(self.train_wrapper), self.config.get('max_history_length', 32), -1]),
+                'items': np.asarray(item_indices, np.int32).reshape([-1, self.config.get('max_history_length', 32)])
             }
         ).shuffle(2*batch_size).batch(batch_size)
 
@@ -301,11 +303,3 @@ class RecData(object):
         with open(os.path.join(load_dir, 'trans_feature_dict.json'), 'r', encoding='utf8') as fp:
             self.trans_feature_dict = OrderedDict(json.load(fp))
         self._display_feature_info()
-
-
-def build_config(config):
-    if isinstance(config, dict):
-        Config = namedtuple('Config', config.keys())
-        config = Config(**config)
-
-    return config
