@@ -356,15 +356,17 @@ if __name__ == '__main__':
         'image_width': 32
     }
 
-    item_data = {
-        'info': np.random.randint(0, 4, (10, 3)),
-        'desc': np.asarray([[0, 1, 2, 3, 4, 5, 6, 7]]*10),
-        'image': np.random.randint(0, 255, size=(10, 32, 32, 3))
-    }
-
     item_model, user_model = build_model(config)
     item_model.summary()
     user_model.summary()
+
+    with tf.device(item_model.trainable_weights[0].device):
+        item_data = {
+            'info': tf.identity(np.random.randint(0, 4, (10, 3))),
+            'desc': tf.identity(np.asarray([[0, 1, 2, 3, 4, 5, 6, 7]]*10)),
+            'image': tf.identity(np.random.randint(0, 255, size=(10, 32, 32, 3)))
+        }
+
     rec_model = RecModel(config, item_model, user_model, item_data)
     rec_model.compile(AdamWarmup(100, 1000, lr_multiply={'bert': 0.01, 'conv': 0.1}))
 
