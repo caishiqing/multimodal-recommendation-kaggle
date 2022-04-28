@@ -73,7 +73,7 @@ class AdamWarmup(tf.keras.optimizers.Adam):
         if not apply_state:
             apply_state = {(var_device, var_dtype): self._fallback_apply_state(var_device, var_dtype)}
 
-        print(var.name, var.device)
+        print(var.name, var_device, var_dtype)
         print(apply_state, '\n')
         if self.lr_multiply:
             for regexp, multiply in self.lr_multiply.items():
