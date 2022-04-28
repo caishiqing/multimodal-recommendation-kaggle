@@ -1,3 +1,4 @@
+from tensorflow.python.distribute import distribution_strategy_context
 from transformers import TFBertModel, BertConfig
 from tensorflow.keras import layers
 from evaluate import UnifiedLoss
@@ -220,8 +221,73 @@ class RecModel(tf.keras.Model):
             reduction=tf.keras.losses.Reduction.NONE
         )
 
+    # def call(self, inputs, training=True):
+    #     batch_size = tf.shape(inputs['items'])[0]
+    #     seq_length = tf.shape(inputs['items'])[1]
+    #     # compute item vectors
+    #     item_indices = tf.reshape(inputs['items'], [-1])
+    #     pad_mask = tf.not_equal(item_indices, -1)
+    #     item_vectors = self.item_model(
+    #         {
+    #             'info': tf.gather(self.item_data['info'], item_indices),
+    #             'desc': tf.gather(self.item_data['desc'], item_indices),
+    #             'image': tf.gather(self.item_data['image'], item_indices)
+    #         },
+    #         training=training
+    #     )
+    #     item_vectors *= tf.expand_dims(tf.cast(pad_mask, tf.float32), -1)
+    #     item_vectors = tf.reshape(item_vectors, [batch_size, seq_length, -1])
+
+    #     # compute user vectors
+    #     state_seq, _ = self.user_model(
+    #         {
+    #             'profile': inputs['profile'],
+    #             'context': inputs['context'],
+    #             'items': item_vectors
+    #         },
+    #         training=training
+    #     )
+
+    #     batch_idx = tf.range(0, batch_size)
+    #     length_idx = tf.range(0, seq_length)
+    #     a = batch_idx[:, tf.newaxis, tf.newaxis, tf.newaxis]
+    #     b = length_idx[tf.newaxis, :, tf.newaxis, tf.newaxis]
+    #     c = batch_idx[tf.newaxis, tf.newaxis, :, tf.newaxis]
+    #     d = length_idx[tf.newaxis, tf.newaxis, tf.newaxis, :]
+
+    #     # mask history items and items out of prediction length
+    #     prd_mask = tf.logical_and(
+    #         tf.equal(a, c),
+    #         tf.logical_or(
+    #             tf.greater_equal(b, d), tf.greater(d-b, self.config['predict_length']))
+    #     )
+    #     prd_mask = tf.reshape(prd_mask, [batch_size, seq_length, -1])  # (batch, len, batch * len)
+    #     prd_mask = tf.logical_not(prd_mask)
+    #     pad_mask = pad_mask[tf.newaxis, tf.newaxis, :]
+
+    #     # mask same items
+    #     items_a = inputs['items'][:, :, tf.newaxis, tf.newaxis]
+    #     items_b = inputs['items'][tf.newaxis, tf.newaxis, :, :]
+    #     same_mask = tf.not_equal(items_a, items_b)
+    #     same_mask = tf.reshape(same_mask, [batch_size, seq_length, -1])  # (batch, len, batch * len)
+
+    #     # (batch, len, batch * len)
+    #     mask = tf.logical_and(tf.logical_and(pad_mask, prd_mask), same_mask)
+
+    #     # compute logits
+    #     item_vectors = tf.reshape(item_vectors, [-1, self.config['embed_dim']])  # (batch * len, dim)
+    #     logits = tf.matmul(state_seq, item_vectors, transpose_b=True)  # (batch, len, batch * len)
+
+    #     # compute labels
+    #     labels = tf.tile(tf.equal(a, c), [1, seq_length, 1, seq_length])
+    #     labels = tf.cast(tf.reshape(labels, [batch_size, seq_length, -1]), tf.float32)
+    #     labels = tf.cast(tf.where(mask, labels, -1), labels.dtype)
+
+    #     loss = self.loss_fn(labels, logits)
+    #     return loss
+
     @tf.function
-    def train_step(self, inputs):
+    def _train_step(self, inputs):
         with tf.GradientTape(persistent=True) as tape:
             batch_size = tf.shape(inputs['items'])[0]
             seq_length = tf.shape(inputs['items'])[1]
@@ -286,11 +352,19 @@ class RecModel(tf.keras.Model):
 
             loss = self.loss_fn(labels, logits)
 
-        variables = self.item_model.trainable_weights+self.user_model.trainable_weights
+        variables = self.item_model.trainable_weights + self.user_model.trainable_weights
         gradients = tape.gradient(loss, variables)
         self.optimizer.apply_gradients(zip(gradients, variables))
 
-        return {'loss': loss}
+        return loss
+
+    def train_step(self, inputs):
+        if distribution_strategy_context.in_cross_replica_context():
+            strategy = tf.distribute.get_strategy()
+            per_replica_losses = strategy.run(self._train_step, args=(inputs,))
+            return strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None)
+
+        return self._train_step(inputs)
 
     def save_weights(self, filepath, **kwargs):
         self.item_model.save_weights(os.path.join(filepath, 'item.h5'), **kwargs)
