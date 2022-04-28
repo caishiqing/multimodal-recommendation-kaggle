@@ -1,4 +1,3 @@
-from tensorflow.python.distribute import distribution_strategy_context
 from transformers import TFBertModel, BertConfig
 from tensorflow.keras import layers
 from evaluate import UnifiedLoss
@@ -208,7 +207,6 @@ class RecModel(tf.keras.Model):
         self.user_model = user_model
         # Cache item data to accelarate
         self.item_data = item_data
-        self.strategy = kwargs.get('strategy')
 
         print(self.item_data['info'].device)
         print(self.item_data['desc'].device)
@@ -223,7 +221,7 @@ class RecModel(tf.keras.Model):
         )
 
     @tf.function
-    def _train_step(self, inputs):
+    def train_step(self, inputs):
         with tf.GradientTape(persistent=True) as tape:
             batch_size = tf.shape(inputs['items'])[0]
             seq_length = tf.shape(inputs['items'])[1]
@@ -292,19 +290,7 @@ class RecModel(tf.keras.Model):
         gradients = tape.gradient(loss, variables)
         self.optimizer.apply_gradients(zip(gradients, variables))
 
-        return loss
-
-    def train_step(self, inputs):
-        if distribution_strategy_context.in_cross_replica_context():
-            if self.strategy is not None:
-                strategy = self.strategy
-            else:
-                strategy = tf.distribute.get_strategy()
-            print(strategy)
-            per_replica_losses = strategy.run(self._train_step, args=(inputs,))
-            return strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses, axis=None)
-
-        return self._train_step(inputs)
+        return {'loss': loss}
 
     def save_weights(self, filepath, **kwargs):
         self.item_model.save_weights(os.path.join(filepath, 'item.h5'), **kwargs)
@@ -360,9 +346,9 @@ if __name__ == '__main__':
         'max_history_length': 16,
         'predict_length': 12,
         'max_desc_length': 8,
-        'info_size': [4, 5, 6],
-        'profile_size': [2, 3],
-        'context_size': [3, 5],
+        'info_size': [9, 9, 9],
+        'profile_size': [9, 9],
+        'context_size': [9, 9],
         'embed_dim': 64,
         'bert_path': 'bert-base-uncased',
         'image_weights': 'imagenet',
@@ -374,29 +360,28 @@ if __name__ == '__main__':
     item_model.summary()
     user_model.summary()
 
+    inputs = {
+        'items': np.random.randint(0, 8, size=(100, config['max_history_length']), dtype=np.int32),
+        'profile': np.random.randint(0, 8, size=(100, len(config['profile_size'])), dtype=np.int32),
+        'context': np.random.randint(0, 8, size=(100, config['max_history_length'], len(config['context_size'])), dtype=np.int32)
+    }
+
     with tf.device(item_model.trainable_weights[0].device):
         item_data = {
             'info': tf.identity(np.random.randint(0, 4, (10, 3))),
             'desc': tf.identity(np.asarray([[0, 1, 2, 3, 4, 5, 6, 7]]*10)),
             'image': tf.identity(np.random.randint(0, 255, size=(10, 32, 32, 3)))
         }
+        tensor_inputs = {
+            'items': tf.identity(inputs['items']),
+            'profile': tf.identity(inputs['profile']),
+            'context': tf.identity(inputs['context'])
+        }
 
     rec_model = RecModel(config, item_model, user_model, item_data)
     rec_model.compile(AdamWarmup(100, 1000, lr_multiply={'bert': 0.01, 'conv': 0.1}))
-
-    # for w in item_model.trainable_weights:
-    #     print(w.name)
-
-    # print('\n\n')
-    # for w in user_model.trainable_weights:
-    #     print(w.name)
-
-    inputs = {
-        'items': tf.constant([[1, 3], [2, 5]], dtype=tf.int32),
-        'profile': tf.constant([[1, 2], [0, 2]], dtype=tf.int32),
-        'context': tf.constant([[[1, 2], [3, 4]], [[1, 2], [3, 4]]], dtype=tf.int32)
-    }
-    loss = rec_model.train_step(inputs)
+    #loss = rec_model.train_step(tensor_inputs)
+    rec_model.fit(x=tf.data.Dataset.from_tensor_slices(inputs).batch(2))
 
     # item_vectors = tf.identity(item_model.predict(item_data))
     # rec_infer = RecInfer(user_model, item_vectors, top_k=5)

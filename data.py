@@ -273,15 +273,13 @@ class RecData(object):
         ).reshape([-1])
         item_indices = self.trans.iloc[trans_indices]['item']
 
-        dataset = tf.data.Dataset.from_tensor_slices(
-            {
-                'profile': self.user_data['profile'][self.train_wrapper.user_indices],
-                'context': self.trans_data['context'][trans_indices].reshape(
-                    [len(self.train_wrapper), self.config.get('max_history_length', 32), -1]),
-                'items': np.asarray(item_indices, np.int32).reshape([-1, self.config.get('max_history_length', 32)])
-            }
-        ).shuffle(2*batch_size).batch(batch_size)
-
+        data = {
+            'profile': self.user_data['profile'][self.train_wrapper.user_indices],
+            'context': self.trans_data['context'][trans_indices].reshape(
+                [len(self.train_wrapper), self.config.get('max_history_length', 32), -1]),
+            'items': np.asarray(item_indices, np.int32).reshape([-1, self.config.get('max_history_length', 32)])
+        }
+        dataset = tf.data.Dataset.from_tensor_slices(data).shuffle(2*batch_size).batch(batch_size)
         return dataset
 
     def save_feature_dict(self, save_dir: str):
