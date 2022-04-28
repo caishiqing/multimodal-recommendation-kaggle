@@ -229,25 +229,24 @@ class RecData(object):
         return size
 
     def _learn_feature_dict(self):
-        for col in self.items.columns:
-            if col in self._sys_fields:
-                if col != 'id' or not self.config.get('use_item_id'):
-                    continue
+        info_features = sorted(set(self.items.columns) - set(self._sys_fields))
+        if self.config.get('use_item_id'):
+            info_features.append('id')
+        for col in info_features:
             vals = set(self.items[col])
             self.item_feature_dict[col] = OrderedDict(
                 [(val, i) for i, val in enumerate(sorted(vals))])
 
-        for col in self.users.columns:
-            if col in self._sys_fields:
-                if col != 'id' or not self.config.get('use_user_id'):
-                    continue
+        profile_features = sorted(set(self.users.columns) - set(self._sys_fields))
+        if self.config.get('use_user_id'):
+            profile_features.append('id')
+        for col in profile_features:
             vals = set(self.users[col])
             self.user_feature_dict[col] = OrderedDict(
                 [(val, i) for i, val in enumerate(sorted(vals))])
 
-        for col in self.trans.columns:
-            if col in self._sys_fields:
-                continue
+        context_features = sorted(set(self.trans.columns) - set(self._sys_fields))
+        for col in context_features:
             vals = set(self.trans[col])
             self.trans_feature_dict[col] = OrderedDict(
                 [(val, i) for i, val in enumerate(sorted(vals))])
