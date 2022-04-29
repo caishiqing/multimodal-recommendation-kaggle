@@ -222,6 +222,8 @@ class RecModel(tf.keras.Model):
 
     @tf.function
     def train_step(self, inputs):
+        if isinstance(inputs, tuple):
+            inputs = inputs[0]
         with tf.GradientTape(persistent=True) as tape:
             batch_size = tf.shape(inputs['items'])[0]
             seq_length = tf.shape(inputs['items'])[1]
@@ -381,7 +383,7 @@ if __name__ == '__main__':
     rec_model = RecModel(config, item_model, user_model, item_data)
     rec_model.compile(AdamWarmup(100, 1000, lr_multiply={'bert': 0.01, 'conv': 0.1}))
     #loss = rec_model.train_step(tensor_inputs)
-    rec_model.fit(x=tf.data.Dataset.from_tensor_slices(inputs).batch(2))
+    rec_model.fit(x=inputs, batch_size=2)
 
     # item_vectors = tf.identity(item_model.predict(item_data))
     # rec_infer = RecInfer(user_model, item_vectors, top_k=5)
