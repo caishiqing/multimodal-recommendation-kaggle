@@ -80,7 +80,8 @@ class RecEngine:
             verbose=kwargs.get('verbose', 1)
         )
         rec_model.fit(
-            dataset, epochs=kwargs.get('epochs', 10),
+            dataset, batch_size=batch_size,
+            epochs=kwargs.get('epochs', 10),
             steps_per_epoch=kwargs.get('steps_per_epoch'),
             callbacks=[checkpoint],
             verbose=kwargs.get('verbose', 1)
