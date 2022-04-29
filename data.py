@@ -279,7 +279,7 @@ class RecData(object):
                 [len(self.train_wrapper), self.config.get('max_history_length', 32), -1]),
             'items': np.asarray(item_indices, np.int32).reshape([-1, self.config.get('max_history_length', 32)])
         }
-        dataset = tf.data.Dataset.from_tensor_slices(data).shuffle(2*batch_size).batch(batch_size)
+        dataset = tf.data.Dataset.from_tensor_slices(data).shuffle(2*batch_size).batch(batch_size, drop_remainder=True)
         return dataset
 
     def save_feature_dict(self, save_dir: str):
