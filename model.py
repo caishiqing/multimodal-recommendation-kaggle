@@ -43,12 +43,9 @@ class AttributeEmbedding(layers.Layer):
 class Image(layers.Layer):
     """ 商品图片模型 """
 
-    def __init__(self, embed_dim=512, image_weights=None,
-                 image_height=128, image_width=128, **kwargs):
+    def __init__(self, embed_dim=512, image_weights=None, **kwargs):
         super(Image, self).__init__(**kwargs)
         self.embed_dim = embed_dim
-        self.image_height = image_height
-        self.image_width = image_width
         self.backbone = tf.keras.applications.ResNet50(
             include_top=False, pooling='max',  weights=image_weights)
         self.dense = layers.Dense(self.embed_dim)
@@ -56,19 +53,8 @@ class Image(layers.Layer):
         self.mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
         self.std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
 
-    def _decode_image(self, img_bytes):
-        img = tf.image.decode_image(img_bytes, dtype=tf.float32, expand_animations=False)
-        img = tf.image.resize(img, (self.image_height, self.image_width))
-        img.set_shape((self.image_height, self.image_width, 3))
-        return img
-
-    @tf.function
-    def _decode_images(self, img_bytes):
-        return tf.map_fn(self._decode_image, img_bytes, fn_output_signature=tf.float32)
-
-    def _preprocess(self, img_bytes):
-        with tf.device(self.trainable_weights[0].device):
-            x = tf.identity(self._decode_images(img_bytes))
+    def _preprocess(self, img):
+        x = tf.cast(img, tf.float32) / 256
         return (x - self.mean) / self.std
 
     def call(self, img, training=None):
@@ -124,14 +110,11 @@ class Item(tf.keras.Model):
 
     def __init__(self, info_size, embed_dim=512, **kwargs):
         image_weights = kwargs.pop('image_weights', None)
-        image_height = kwargs.pop('image_height', 128)
-        image_width = kwargs.pop('image_width', 128)
         bert_path = kwargs.pop('bert_path', None)
         super(Item, self).__init__(**kwargs)
 
         self.image_model = Image(
-            embed_dim, image_weights=image_weights,
-            image_height=image_height, image_width=image_width, name='Image'
+            embed_dim, image_weights=image_weights, name='Image'
         )
         self.desc_model = Desc(embed_dim, bert_path=bert_path, name='Desc')
         self.info_model = AttributeEmbedding(info_size, embed_dim, name='Info')
@@ -189,8 +172,6 @@ def build_model(config):
         config['info_size'], embed_dim=config.get('embed_dim', 256),
         bert_path=config.pop('bert_path', None),
         image_weights=config.pop('image_weights', None),
-        image_height=config.pop('image_height', 128),
-        image_width=config.pop('image_width', 128),
         name='Item'
     )
     user_model = User(
@@ -199,8 +180,9 @@ def build_model(config):
         name='User'
     )
 
+    h, w = config.get('image_height', 128), config.get('image_width', 128)
     item_dummy_inputs = {
-        'image': layers.Input(shape=tf.TensorShape([]), dtype=tf.string),
+        'image': layers.Input(shape=(h, w, 3), dtype=tf.uint8),
         'desc': layers.Input(shape=(config['max_desc_length'],), dtype=tf.int32),
         'info': layers.Input(shape=(len(config['info_size']),), dtype=tf.int32)
     }
@@ -389,12 +371,11 @@ if __name__ == '__main__':
         'context': np.random.randint(0, 8, size=(100, config['max_history_length'], len(config['context_size'])), dtype=np.int32)
     }
 
-    imgs = [tf.image.encode_jpeg(img).numpy() for img in np.random.randint(0, 255, size=(10, 32, 32, 3))]
     with tf.device(item_model.trainable_weights[0].device):
         item_data = {
             'info': tf.identity(np.random.randint(0, 4, (10, 3))),
             'desc': tf.identity(np.asarray([[0, 1, 2, 3, 4, 5, 6, 7]]*10)),
-            'image': tf.identity(imgs)
+            'image': tf.identity(np.random.randint(0, 255, size=(10, 32, 32, 3)))
         }
         tensor_inputs = {
             'items': tf.identity(inputs['items']),
