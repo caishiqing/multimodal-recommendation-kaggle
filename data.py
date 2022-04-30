@@ -110,25 +110,25 @@ class RecData(object):
             for i, (key, feat_map) in enumerate(self.item_feature_dict.items()):
                 info[:, i] = self.items.pop(key).map(feat_map)
 
-            info = tf.identity(info)
-            desc = tf.identity(
-                tokenizer(
-                    self.items.pop('desc').to_list(),
-                    max_length=self.config.get('max_desc_length', 8),
-                    truncation=True,
-                    padding='max_length',
-                    return_attention_mask=False,
-                    return_token_type_ids=False,
-                    return_tensors='np'
-                )['input_ids'])
+            desc = tokenizer(
+                self.items.pop('desc').to_list(),
+                max_length=self.config.get('max_desc_length', 8),
+                truncation=True,
+                padding='max_length',
+                return_attention_mask=False,
+                return_token_type_ids=False,
+                return_tensors='np'
+            )['input_ids']
 
             def _decode_image(img_bytes):
                 img = tf.image.decode_image(img_bytes, expand_animations=False)
                 img = tf.image.resize(img, size=(self.config['image_height'], self.config['image_width']))
                 return tf.identity(img)
 
-            image = tf.identity([_decode_image(img) for img in self.items.pop('image').map(base64.b64decode)])
-            # cache item data as tensor to speed lookup
+            image = np.asarray(
+                [_decode_image(img) for img in self.items.pop('image').map(base64.b64decode)],
+                dtype=np.uint8)
+
             self.item_data = {'info': info, 'desc': desc, 'image': image}
             print('Done!')
 

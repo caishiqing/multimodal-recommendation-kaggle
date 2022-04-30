@@ -206,7 +206,12 @@ class RecModel(tf.keras.Model):
         self.item_model = item_model
         self.user_model = user_model
         # Cache item data to accelarate
-        self.item_data = item_data
+        with tf.device(item_model.trainable_weights[0].device):
+            self.item_data = {
+                'info': tf.identity(item_data['info']),
+                'desc': tf.identity(item_data['desc']),
+                'image': tf.identity(item_data['image'])
+            }
 
         print(self.item_data['info'].device)
         print(self.item_data['desc'].device)
