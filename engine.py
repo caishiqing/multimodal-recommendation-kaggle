@@ -39,7 +39,6 @@ class RecEngine:
         data.prepare_features(self.tokenizer)
         data.prepare_train(test_users)
         dataset = data.train_dataset(batch_size)
-        print('Train Dataset: ', dataset)
         rec_model = RecModel(self.config,
                              self.item_model,
                              self.user_model,
