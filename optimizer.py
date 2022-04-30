@@ -73,12 +73,16 @@ class AdamWarmup(tf.keras.optimizers.Adam):
         if not apply_state:
             apply_state = {(var_device, var_dtype): self._fallback_apply_state(var_device, var_dtype)}
 
-        print(var.name, var_device, var_dtype)
-        print(apply_state, '\n')
+        # print(var.name, var_device, var_dtype)
+        # print(apply_state, '\n')
         if self.lr_multiply:
             for regexp, multiply in self.lr_multiply.items():
                 if re.search(regexp, var.name):
-                    apply_state[(var_device, var_dtype)]['lr_t'] *= multiply
+                    if (var_device, var_dtype) not in apply_state:
+                        key = list(apply_state)[0]
+                    else:
+                        key = (var_device, var_dtype)
+                    apply_state[key]['lr_t'] *= multiply
                     break
 
         return super(AdamWarmup, self)._resource_apply_dense(grad, var, apply_state=apply_state)
