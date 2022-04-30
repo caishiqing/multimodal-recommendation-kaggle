@@ -222,8 +222,8 @@ class RecModel(tf.keras.Model):
 
     @tf.function
     def train_step(self, inputs):
-        if isinstance(inputs, tuple):
-            inputs = inputs[0]
+        # if isinstance(inputs, tuple):
+        #     inputs = inputs[0]
         with tf.GradientTape(persistent=True) as tape:
             batch_size = tf.shape(inputs['items'])[0]
             seq_length = tf.shape(inputs['items'])[1]
