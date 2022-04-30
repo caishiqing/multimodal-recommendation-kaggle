@@ -120,15 +120,12 @@ class RecData(object):
                 return_tensors='np'
             )['input_ids']
 
-            def _decode_image(img_bytes):
-                img = tf.image.decode_image(img_bytes, expand_animations=False)
-                img = tf.image.resize(img, size=(self.config['image_height'], self.config['image_width']))
-                return tf.identity(img)
+            # def _decode_image(img_bytes):
+            #     img = tf.image.decode_image(img_bytes, expand_animations=False)
+            #     img = tf.image.resize(img, size=(self.config['image_height'], self.config['image_width']))
+            #     return tf.identity(img)
 
-            image = np.asarray(
-                [_decode_image(img) for img in self.items.pop('image').map(base64.b64decode)],
-                dtype=np.uint8)
-
+            image = np.asarray(self.items.pop('image').map(base64.b64decode))
             self.item_data = {'info': info, 'desc': desc, 'image': image}
             print('Done!')
 
