@@ -69,12 +69,13 @@ class RecEngine:
         self.user_model.summary()
 
         # Build checkpoint and train model
-        checkpoint = Checkpoint(
-            save_path, data, self.config,
-            batch_size=kwargs.get('infer_batch_size', 256),
-            skip_used_items=kwargs.get('skip_used_items', False),
-            verbose=kwargs.get('verbose', 1)
-        )
+        with tf.device(self.item_model.trainable_weights[0].device):
+            checkpoint = Checkpoint(
+                save_path, data, self.config,
+                batch_size=kwargs.get('infer_batch_size', 256),
+                skip_used_items=kwargs.get('skip_used_items', False),
+                verbose=kwargs.get('verbose', 1)
+            )
         rec_model.fit(
             dataset, batch_size=batch_size,
             epochs=kwargs.get('epochs', 10),
