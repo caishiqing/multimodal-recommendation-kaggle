@@ -176,7 +176,8 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         item_vectors = self.model.item_model.predict(
             self.model.item_data, batch_size=self.batch_size)
 
-        self.infer_model = RecInfer(skip_used_items=self.skip_used_items,
+        self.infer_model = RecInfer(self.model.user_model, item_vectors,
+                                    skip_used_items=self.skip_used_items,
                                     max_history_length=self.max_history_length,
                                     profile_dim=self.profile_dim,
                                     context_dim=self.context_dim,
