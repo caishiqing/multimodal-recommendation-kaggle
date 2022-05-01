@@ -311,11 +311,12 @@ class RecInfer(tf.keras.Model):
         profile_dim = kwargs.pop('profile_dim')
         context_dim = kwargs.pop('context_dim')
         super(RecInfer, self).__init__(**kwargs)
-
-        self.user_model = user_model
-        self.item_vectors = item_vectors
         self.skip_used_items = skip_used_items
         self.top_k = top_k
+
+        self.user_model = user_model
+        with tf.device(self.user_model.trainable_weights[0].device):
+            self.item_vectors = tf.identity(item_vectors)
 
         dummy_inputs = {
             'profile': layers.Input(shape=(profile_dim,), dtype=tf.int32),
