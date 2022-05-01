@@ -303,7 +303,7 @@ class RecModel(tf.keras.Model):
 
 
 class RecInfer(tf.keras.Model):
-    def __init__(self, user_model=None, item_vectors=None,
+    def __init__(self, user_model, item_vectors,
                  skip_used_items=False, **kwargs):
 
         top_k = kwargs.pop('top_k', 10)
@@ -323,12 +323,6 @@ class RecInfer(tf.keras.Model):
             'item_indices': layers.Input(shape=(max_history_length,), dtype=tf.int32)
         }
         self(dummy_inputs)
-
-    def set_user_model(self, user_model):
-        self.user_model = user_model
-
-    def set_item_vectors(self, item_vectors):
-        self.item_vectors = item_vectors
 
     def call(self, inputs):
         batch_size = tf.shape(inputs['item_indices'])[0]

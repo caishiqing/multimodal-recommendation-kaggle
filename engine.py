@@ -130,9 +130,6 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                  **kwargs):
 
         top_k = config.get('top_k', 10)
-        max_history_length = config.get('max_history_length', 32)
-        profile_dim = len(config['profile_size'])
-        context_dim = len(config['context_size'])
         monitor = 'MAP@{}'.format(top_k)
         super(Checkpoint, self).__init__(
             filepath,
@@ -148,6 +145,9 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         self.skip_used_items = skip_used_items
         self.verbose = verbose
         self.top_k = top_k
+        self.max_history_length = config.get('max_history_length', 32)
+        self.profile_dim = len(config['profile_size'])
+        self.context_dim = len(config['context_size'])
 
         test_wrapper = self.data.test_wrapper
         # use latest history transactions for observation
@@ -172,22 +172,17 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             'item_indices': tf.identity(item_indices)
         }
 
-        self.infer_model = RecInfer(skip_used_items=self.skip_used_items,
-                                    max_history_length=max_history_length,
-                                    profile_dim=profile_dim,
-                                    context_dim=context_dim,
-                                    top_k=top_k)
-        self.infer_model.compile(metrics=MAP(self.top_k))
-
-    def set_model(self, model):
-        self.infer_model.set_user_model(model.user_model)
-        super(Checkpoint, self).set_model(model)
-
     def on_epoch_end(self, epoch, logs):
         item_vectors = self.model.item_model.predict(
             self.model.item_data, batch_size=self.batch_size)
 
-        self.infer_model.set_item_vectors(tf.identity(item_vectors))
+        self.infer_model = RecInfer(skip_used_items=self.skip_used_items,
+                                    max_history_length=self.max_history_length,
+                                    profile_dim=self.profile_dim,
+                                    context_dim=self.context_dim,
+                                    top_k=self.top_k)
+
+        self.infer_model.compile(metrics=MAP(self.top_k))
         _, map_score = self.infer_model.evaluate(self.infer_inputs,
                                                  self.ground_truth,
                                                  verbose=self.verbose)
