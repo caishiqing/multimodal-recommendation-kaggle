@@ -168,9 +168,9 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         context = self.data.trans_data['context'][trans_indices].reshape(
             [len(test_wrapper), self.max_history_length, -1])
         self.infer_inputs = {
-            'profile': tf.identity(profile),
-            'context': tf.identity(context),
-            'item_indices': tf.identity(item_indices)
+            'profile': profile,
+            'context': context,
+            'item_indices': item_indices
         }
 
     def on_epoch_end(self, epoch, logs):
