@@ -152,7 +152,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         test_wrapper = self.data.test_wrapper
         # use latest history transactions for observation
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-            test_wrapper.trans_indices, maxlen=max_history_length,
+            test_wrapper.trans_indices, maxlen=self.max_history_length,
             padding='pre', truncating='pre', value=-1
         ).reshape([-1])
         item_indices = np.asarray(
@@ -165,7 +165,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         )
         profile = self.data.user_data['profile'][test_wrapper.user_indices]
         context = self.data.trans_data['context'][trans_indices].reshape(
-            [len(test_wrapper), max_history_length, -1])
+            [len(test_wrapper), self.max_history_length, -1])
         self.infer_inputs = {
             'profile': tf.identity(profile),
             'context': tf.identity(context),
