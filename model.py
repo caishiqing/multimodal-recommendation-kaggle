@@ -319,7 +319,7 @@ class RecInfer(tf.keras.Model):
 
         dummy_inputs = {
             'profile': layers.Input(shape=(profile_dim,), dtype=tf.int32),
-            'context': layers.Input(shape=(context_dim, max_history_length), dtype=tf.int32),
+            'context': layers.Input(shape=(max_history_length, context_dim), dtype=tf.int32),
             'item_indices': layers.Input(shape=(max_history_length,), dtype=tf.int32)
         }
         self(dummy_inputs)
