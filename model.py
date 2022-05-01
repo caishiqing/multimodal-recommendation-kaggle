@@ -304,17 +304,23 @@ class RecModel(tf.keras.Model):
 
 class RecInfer(tf.keras.Model):
     def __init__(self, user_model=None, item_vectors=None,
-                 top_k=10, skip_used_items=False, **kwargs):
+                 skip_used_items=False, **kwargs):
+
+        top_k = kwargs.pop('top_k', 10)
+        max_history_length = kwargs.pop('max_history_length', 32)
+        profile_dim = kwargs.pop('profile_dim')
+        context_dim = kwargs.pop('context_dim')
         super(RecInfer, self).__init__(**kwargs)
+
         self.user_model = user_model
         self.item_vectors = item_vectors
-        self.top_k = top_k
         self.skip_used_items = skip_used_items
+        self.top_k = top_k
 
         dummy_inputs = {
-            'profile': layers.Input(shape=user_model.input_shape['profile'][1:], dtype=tf.int32),
-            'context': layers.Input(shape=user_model.input_shape['context'][1:], dtype=tf.int32),
-            'item_indices': layers.Input(shape=user_model.input_shape['items'][1:-1], dtype=tf.int32)
+            'profile': layers.Input(shape=(profile_dim,), dtype=tf.int32),
+            'context': layers.Input(shape=(context_dim, max_history_length), dtype=tf.int32),
+            'item_indices': layers.Input(shape=(max_history_length,), dtype=tf.int32)
         }
         self(dummy_inputs)
 

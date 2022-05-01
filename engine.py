@@ -69,11 +69,8 @@ class RecEngine:
         self.user_model.summary()
 
         # Build checkpoint and train model
-        top_k = self.config.get('top_k', 12)
         checkpoint = Checkpoint(
-            save_path, data,
-            top_k=kwargs.get('top_k', top_k),
-            max_history_length=self.config.get('max_history_length', 50),
+            save_path, data, self.config,
             batch_size=kwargs.get('infer_batch_size', 256),
             skip_used_items=kwargs.get('skip_used_items', False),
             verbose=kwargs.get('verbose', 1)
@@ -126,14 +123,17 @@ class RecEngine:
 class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
     def __init__(self, filepath: str,
                  data: RecData,
-                 top_k: int = 12,
-                 max_history_length: int = 50,
+                 config: dict,
                  batch_size: int = 256,
                  skip_used_items: bool = False,
                  verbose: int = 1,
                  **kwargs):
 
-        monitor = f'MAP@{top_k}'
+        top_k = config.get('top_k', 10)
+        max_history_length = config.get('max_history_length', 32)
+        profile_dim = len(config['profile_size'])
+        context_dim = len(config['context_size'])
+        monitor = 'MAP@{}'.format(top_k)
         super(Checkpoint, self).__init__(
             filepath,
             monitor=monitor,
@@ -143,16 +143,16 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             **kwargs
         )
         self.data = data
-        self.max_history_length = max_history_length
+        self.config = config
         self.batch_size = batch_size
-        self.top_k = top_k
         self.skip_used_items = skip_used_items
         self.verbose = verbose
+        self.top_k = top_k
 
         test_wrapper = self.data.test_wrapper
         # use latest history transactions for observation
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
-            test_wrapper.trans_indices, maxlen=self.max_history_length,
+            test_wrapper.trans_indices, maxlen=max_history_length,
             padding='pre', truncating='pre', value=-1
         ).reshape([-1])
         item_indices = np.asarray(
@@ -165,14 +165,18 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         )
         profile = self.data.user_data['profile'][test_wrapper.user_indices]
         context = self.data.trans_data['context'][trans_indices].reshape(
-            [len(test_wrapper), self.max_history_length, -1])
+            [len(test_wrapper), max_history_length, -1])
         self.infer_inputs = {
             'profile': tf.identity(profile),
             'context': tf.identity(context),
             'item_indices': tf.identity(item_indices)
         }
 
-        self.infer_model = RecInfer(top_k=self.top_k, skip_used_items=self.skip_used_items)
+        self.infer_model = RecInfer(skip_used_items=self.skip_used_items,
+                                    max_history_length=max_history_length,
+                                    profile_dim=profile_dim,
+                                    context_dim=context_dim,
+                                    top_k=top_k)
         self.infer_model.compile(metrics=MAP(self.top_k))
 
     def set_model(self, model):
