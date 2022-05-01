@@ -174,9 +174,12 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         }
 
     def on_epoch_end(self, epoch, logs):
-        item_vectors = self.model.item_model.predict(self.model.item_data,
-                                                     batch_size=self.batch_size,
-                                                     verbose=self.verbose)
+        with tf.device(self.model.user_model.trainable_weights[0].device):
+            item_vectors = tf.identity(
+                self.model.item_model.predict(self.model.item_data,
+                                              batch_size=self.batch_size,
+                                              verbose=self.verbose)
+            )
 
         self.infer_model = RecInfer(self.model.user_model, item_vectors,
                                     skip_used_items=self.skip_used_items,
