@@ -172,12 +172,12 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             'item_indices': tf.identity(item_indices)
         }
 
-        self.infer_model = RecInfer(
-            self.model.user_model,
-            top_k=self.top_k,
-            skip_used_items=self.skip_used_items
-        )
+        self.infer_model = RecInfer(top_k=self.top_k, skip_used_items=self.skip_used_items)
         self.infer_model.compile(metrics=MAP(self.top_k))
+
+    def set_model(self, model):
+        self.infer_model.set_user_model(model.user_model)
+        super(Checkpoint, self).set_model(model)
 
     def on_epoch_end(self, epoch, logs):
         item_vectors = self.model.item_model.predict(

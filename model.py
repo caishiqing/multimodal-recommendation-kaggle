@@ -303,7 +303,7 @@ class RecModel(tf.keras.Model):
 
 
 class RecInfer(tf.keras.Model):
-    def __init__(self, user_model, item_vectors=None,
+    def __init__(self, user_model=None, item_vectors=None,
                  top_k=10, skip_used_items=False, **kwargs):
         super(RecInfer, self).__init__(**kwargs)
         self.user_model = user_model
@@ -317,6 +317,9 @@ class RecInfer(tf.keras.Model):
             'item_indices': layers.Input(shape=user_model.input_shape['items'][1:-1], dtype=tf.int32)
         }
         self(dummy_inputs)
+
+    def set_user_model(self, user_model):
+        self.user_model = user_model
 
     def set_item_vectors(self, item_vectors):
         self.item_vectors = item_vectors
