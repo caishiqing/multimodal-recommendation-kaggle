@@ -149,7 +149,6 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         self.skip_used_items = skip_used_items
         self.verbose = verbose
 
-    def on_epoch_end(self, epoch, logs):
         test_wrapper = self.data.test_wrapper
         # use latest history transactions for observation
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
@@ -160,28 +159,34 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             self.data.trans.iloc[trans_indices]['item'],
             np.int32).reshape([len(test_wrapper), -1])
         # use earlest future transactions for forecasting
-        ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
+        self.ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.ground_truth, maxlen=self.top_k,
             padding='post', truncating='post', value=-1
         )
-
-        item_vectors = self.model.item_model.predict(
-            self.model.item_data, batch_size=self.batch_size)
-        item_vectors = tf.identity(item_vectors)
-
         profile = self.data.user_data['profile'][test_wrapper.user_indices]
         context = self.data.trans_data['context'][trans_indices].reshape(
             [len(test_wrapper), self.max_history_length, -1])
+        self.infer_inputs = {
+            'profile': tf.identity(profile),
+            'context': tf.identity(context),
+            'item_indices': tf.identity(item_indices)
+        }
 
-        infer_model = RecInfer(
+        self.infer_model = RecInfer(
             self.model.user_model,
-            item_vectors,
             top_k=self.top_k,
             skip_used_items=self.skip_used_items
         )
-        infer_model.compile(metrics=MAP(self.top_k))
-        infer_inputs = {'profile': profile, 'context': context, 'item_indices': item_indices}
-        _, map_score = infer_model.evaluate(infer_inputs, ground_truth, verbose=self.verbose)
+        self.infer_model.compile(metrics=MAP(self.top_k))
+
+    def on_epoch_end(self, epoch, logs):
+        item_vectors = self.model.item_model.predict(
+            self.model.item_data, batch_size=self.batch_size)
+
+        self.infer_model.set_item_vectors(tf.identity(item_vectors))
+        _, map_score = self.infer_model.evaluate(self.infer_inputs,
+                                                 self.ground_truth,
+                                                 verbose=self.verbose)
 
         logs[self.monitor] = map_score
         super(Checkpoint, self).on_epoch_end(epoch, logs)
