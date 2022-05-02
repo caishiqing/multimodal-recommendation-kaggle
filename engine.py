@@ -175,18 +175,23 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         self.eval_data = tf.data.Dataset.from_tensor_slices(
             (infer_inputs, ground_truth)).batch(self.batch_size, drop_remainder=True)
 
+    def set_model(self, model):
+        super(Checkpoint, self).set_model(model)
+        self.infer_model = RecInfer(self.model.user_model,
+                                    skip_used_items=self.skip_used_items,
+                                    max_history_length=self.max_history_length,
+                                    profile_dim=self.profile_dim,
+                                    context_dim=self.context_dim,
+                                    num_items=self.model.item_model.item_data['info'].shape[0],
+                                    embed_dim=self.config['embed_dim'],
+                                    top_k=self.top_k)
+
     def on_epoch_end(self, epoch, logs):
         item_vectors = self.model.item_model.predict(self.model.item_data,
                                                      batch_size=self.batch_size,
                                                      verbose=self.verbose)
 
-        self.infer_model = RecInfer(self.model.user_model, item_vectors,
-                                    skip_used_items=self.skip_used_items,
-                                    max_history_length=self.max_history_length,
-                                    profile_dim=self.profile_dim,
-                                    context_dim=self.context_dim,
-                                    top_k=self.top_k)
-
+        self.infer_model.set_item_vectors(item_vectors)
         self.infer_model.compile(metrics=MAP(self.top_k))
         _, map_score = self.infer_model.evaluate(self.eval_data, verbose=self.verbose)
 

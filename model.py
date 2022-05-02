@@ -303,20 +303,23 @@ class RecModel(tf.keras.Model):
 
 
 class RecInfer(tf.keras.Model):
-    def __init__(self, user_model, item_vectors,
-                 skip_used_items=False, **kwargs):
-
+    def __init__(self, user_model, skip_used_items=False, **kwargs):
         top_k = kwargs.pop('top_k', 10)
         max_history_length = kwargs.pop('max_history_length', 32)
         profile_dim = kwargs.pop('profile_dim')
         context_dim = kwargs.pop('context_dim')
+        num_items = kwargs.pop('num_items')
+        embed_dim = kwargs.pop('embed_dim')
         super(RecInfer, self).__init__(**kwargs)
         self.skip_used_items = skip_used_items
         self.top_k = top_k
 
         self.user_model = user_model
-        with tf.device(self.user_model.trainable_weights[0].device):
-            self.item_vectors = tf.identity(item_vectors)
+        self.item_vectors = self.add_weight(name='item_vectors',
+                                            shape=(num_items, embed_dim),
+                                            dtype=tf.float32,
+                                            initializer='zeros',
+                                            trainable=False)
 
         dummy_inputs = {
             'profile': layers.Input(shape=(profile_dim,), dtype=tf.int32),
@@ -324,6 +327,9 @@ class RecInfer(tf.keras.Model):
             'item_indices': layers.Input(shape=(max_history_length,), dtype=tf.int32)
         }
         self(dummy_inputs)
+
+    def set_item_vectors(self, item_vectors):
+        self.item_vectors.assign(item_vectors)
 
     def call(self, inputs):
         batch_size = tf.shape(inputs['item_indices'])[0]
