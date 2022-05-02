@@ -163,14 +163,14 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.ground_truth, maxlen=self.top_k,
             padding='post', truncating='post', value=-1
-        )[:10000]
+        )
         profile = self.data.user_data['profile'][test_wrapper.user_indices]
         context = self.data.trans_data['context'][trans_indices].reshape(
             [len(test_wrapper), self.max_history_length, -1])
         infer_inputs = {
-            'profile': profile[:10000],
-            'context': context[:10000],
-            'item_indices': item_indices[:10000]
+            'profile': profile,
+            'context': context,
+            'item_indices': item_indices
         }
         self.eval_data = tf.data.Dataset.from_tensor_slices(
             (infer_inputs, ground_truth)).batch(self.batch_size, drop_remainder=True)
