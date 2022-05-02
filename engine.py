@@ -160,17 +160,17 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             self.data.trans.iloc[trans_indices]['item'],
             np.int32).reshape([len(test_wrapper), -1])
         # use earlest future transactions for forecasting
-        self.ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
+        self.ground_truth = tf.identity(tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.ground_truth, maxlen=self.top_k,
             padding='post', truncating='post', value=-1
-        )
+        ))
         profile = self.data.user_data['profile'][test_wrapper.user_indices]
         context = self.data.trans_data['context'][trans_indices].reshape(
             [len(test_wrapper), self.max_history_length, -1])
         self.infer_inputs = {
-            'profile': profile,
-            'context': context,
-            'item_indices': item_indices
+            'profile': tf.identity(profile),
+            'context': tf.identity(context),
+            'item_indices': tf.identity(item_indices)
         }
 
     def on_epoch_end(self, epoch, logs):
