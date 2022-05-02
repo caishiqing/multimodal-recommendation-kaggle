@@ -186,13 +186,14 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                                     embed_dim=self.config['embed_dim'],
                                     top_k=self.top_k)
 
+        self.infer_model.compile(metrics=MAP(self.top_k))
+
     def on_epoch_end(self, epoch, logs):
         item_vectors = self.model.item_model.predict(self.model.item_data,
                                                      batch_size=self.batch_size,
                                                      verbose=self.verbose)
 
         self.infer_model.set_item_vectors(item_vectors)
-        self.infer_model.compile(metrics=MAP(self.top_k))
         _, map_score = self.infer_model.evaluate(self.eval_data, verbose=self.verbose)
 
         logs[self.monitor] = map_score
