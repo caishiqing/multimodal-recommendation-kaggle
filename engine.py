@@ -160,18 +160,20 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
             self.data.trans.iloc[trans_indices]['item'],
             np.int32).reshape([len(test_wrapper), -1])
         # use earlest future transactions for forecasting
-        self.ground_truth = tf.identity(tf.keras.preprocessing.sequence.pad_sequences(
+        ground_truth = tf.keras.preprocessing.sequence.pad_sequences(
             test_wrapper.ground_truth, maxlen=self.top_k,
             padding='post', truncating='post', value=-1
-        ))
+        )
         profile = self.data.user_data['profile'][test_wrapper.user_indices]
         context = self.data.trans_data['context'][trans_indices].reshape(
             [len(test_wrapper), self.max_history_length, -1])
-        self.infer_inputs = {
-            'profile': tf.identity(profile),
-            'context': tf.identity(context),
-            'item_indices': tf.identity(item_indices)
+        infer_inputs = {
+            'profile': profile,
+            'context': context,
+            'item_indices': item_indices
         }
+        self.eval_data = tf.data.Dataset.from_tensor_slices(
+            (infer_inputs, ground_truth)).batch(self.batch_size, drop_remainder=True)
 
     def on_epoch_end(self, epoch, logs):
         item_vectors = self.model.item_model.predict(self.model.item_data,
@@ -186,9 +188,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                                     top_k=self.top_k)
 
         self.infer_model.compile(metrics=MAP(self.top_k))
-        _, map_score = self.infer_model.evaluate(self.infer_inputs,
-                                                 self.ground_truth,
-                                                 verbose=self.verbose)
+        _, map_score = self.infer_model.evaluate(self.eval_data, verbose=self.verbose)
 
         logs[self.monitor] = map_score
         super(Checkpoint, self).on_epoch_end(epoch, logs)
