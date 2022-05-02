@@ -182,7 +182,7 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                                     max_history_length=self.max_history_length,
                                     profile_dim=self.profile_dim,
                                     context_dim=self.context_dim,
-                                    num_items=self.model.item_model.item_data['info'].shape[0],
+                                    num_items=self.model.item_data['info'].shape[0],
                                     embed_dim=self.config['embed_dim'],
                                     top_k=self.top_k)
 
