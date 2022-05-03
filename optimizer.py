@@ -68,48 +68,48 @@ class AdamWarmup(tf.keras.optimizers.Adam):
         # {regexp: x.x}
         self.lr_multiply = lr_multiply if lr_multiply else {}
 
-    def _resource_apply_dense(self, grad, var, apply_state=None):
-        multiply = 1
-        for reg, mult in self.lr_multiply.items():
-            if re.search(reg, var.name):
-                multiply *= mult
-                break
+    # def _resource_apply_dense(self, grad, var, apply_state=None):
+    #     multiply = 1
+    #     for reg, mult in self.lr_multiply.items():
+    #         if re.search(reg, var.name):
+    #             multiply *= mult
+    #             break
 
-        var_device, var_dtype = var.device, var.dtype.base_dtype
-        coefficients = ((apply_state or {}).get((var_device, var_dtype))
-                        or self._fallback_apply_state(var_device, var_dtype))
+    #     var_device, var_dtype = var.device, var.dtype.base_dtype
+    #     coefficients = ((apply_state or {}).get((var_device, var_dtype))
+    #                     or self._fallback_apply_state(var_device, var_dtype))
 
-        m = self.get_slot(var, 'm')
-        v = self.get_slot(var, 'v')
+    #     m = self.get_slot(var, 'm')
+    #     v = self.get_slot(var, 'v')
 
-        if not self.amsgrad:
-            return gen_training_ops.ResourceApplyAdam(
-                var=var.handle,
-                m=m.handle,
-                v=v.handle,
-                beta1_power=coefficients['beta_1_power'],
-                beta2_power=coefficients['beta_2_power'],
-                lr=coefficients['lr_t'] * multiply,
-                beta1=coefficients['beta_1_t'],
-                beta2=coefficients['beta_2_t'],
-                epsilon=coefficients['epsilon'],
-                grad=grad,
-                use_locking=self._use_locking)
-        else:
-            vhat = self.get_slot(var, 'vhat')
-            return gen_training_ops.ResourceApplyAdamWithAmsgrad(
-                var=var.handle,
-                m=m.handle,
-                v=v.handle,
-                vhat=vhat.handle,
-                beta1_power=coefficients['beta_1_power'],
-                beta2_power=coefficients['beta_2_power'],
-                lr=coefficients['lr_t'] * multiply,
-                beta1=coefficients['beta_1_t'],
-                beta2=coefficients['beta_2_t'],
-                epsilon=coefficients['epsilon'],
-                grad=grad,
-                use_locking=self._use_locking)
+    #     if not self.amsgrad:
+    #         return gen_training_ops.ResourceApplyAdam(
+    #             var=var.handle,
+    #             m=m.handle,
+    #             v=v.handle,
+    #             beta1_power=coefficients['beta_1_power'],
+    #             beta2_power=coefficients['beta_2_power'],
+    #             lr=coefficients['lr_t'] * multiply,
+    #             beta1=coefficients['beta_1_t'],
+    #             beta2=coefficients['beta_2_t'],
+    #             epsilon=coefficients['epsilon'],
+    #             grad=grad,
+    #             use_locking=self._use_locking)
+    #     else:
+    #         vhat = self.get_slot(var, 'vhat')
+    #         return gen_training_ops.ResourceApplyAdamWithAmsgrad(
+    #             var=var.handle,
+    #             m=m.handle,
+    #             v=v.handle,
+    #             vhat=vhat.handle,
+    #             beta1_power=coefficients['beta_1_power'],
+    #             beta2_power=coefficients['beta_2_power'],
+    #             lr=coefficients['lr_t'] * multiply,
+    #             beta1=coefficients['beta_1_t'],
+    #             beta2=coefficients['beta_2_t'],
+    #             epsilon=coefficients['epsilon'],
+    #             grad=grad,
+    #             use_locking=self._use_locking)
 
     # def _resource_apply_dense(self, grad, var, apply_state=None):
     #     # Different lr for defferent variables
