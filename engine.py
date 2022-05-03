@@ -174,11 +174,6 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
         }
         self.eval_data = tf.data.Dataset.from_tensor_slices(
             (infer_inputs, ground_truth)).batch(self.batch_size, drop_remainder=True)
-        self.item_data = {
-            'info': self.model.info_data,
-            'desc': self.model.desc_data,
-            'image': self.model.image_data
-        }
 
     def set_model(self, model):
         super(Checkpoint, self).set_model(model)
@@ -192,6 +187,11 @@ class Checkpoint(tf.keras.callbacks.ModelCheckpoint):
                                     top_k=self.top_k)
 
         self.infer_model.compile(metrics=MAP(self.top_k))
+        self.item_data = {
+            'info': self.model.info_data,
+            'desc': self.model.desc_data,
+            'image': self.model.image_data
+        }
 
     def on_epoch_end(self, epoch, logs):
         item_vectors = self.model.item_model.predict(self.item_data,
