@@ -209,12 +209,32 @@ class RecModel(tf.keras.Model):
         self.item_model = item_model
         self.user_model = user_model
         # Cache item data to accelarate
-        with tf.device(item_model.trainable_weights[0].device):
-            self.item_data = {
-                'info': tf.identity(item_data['info']),
-                'desc': tf.identity(item_data['desc']),
-                'image': tf.identity(item_data['image'])
-            }
+        # with tf.device(item_model.trainable_weights[0].device):
+        #     self.item_data = {
+        #         'info': tf.identity(item_data['info']),
+        #         'desc': tf.identity(item_data['desc']),
+        #         'image': tf.identity(item_data['image'])
+        #     }
+
+        self.info_data = self.add_weight(name='info',
+                                         shape=item_data['info'].shape,
+                                         dtype=tf.int32,
+                                         initializer='zeros',
+                                         trainable=False)
+        self.desc_data = self.add_weight(name='desc',
+                                         shape=item_data['desc'].shape,
+                                         dtype=tf.int32,
+                                         initializer='zeros',
+                                         trainable=False)
+        self.image_data = self.add_weight(name='image',
+                                          shape=item_data['image'].shape,
+                                          dtype=tf.uint8,
+                                          initializer='zeros',
+                                          trainable=False)
+
+        self.info_data.assign(item_data['info'])
+        self.desc_data.assign(item_data['desc'])
+        self.image_data.assign(item_data['image'])
 
     def compile(self, optimizer, margin=0.0, gamma=1.0):
         super(RecModel, self).compile(optimizer=optimizer)
@@ -235,9 +255,9 @@ class RecModel(tf.keras.Model):
             pad_mask = tf.not_equal(item_indices, -1)
             item_vectors = self.item_model(
                 {
-                    'info': tf.gather(self.item_data['info'], item_indices),
-                    'desc': tf.gather(self.item_data['desc'], item_indices),
-                    'image': tf.gather(self.item_data['image'], item_indices)
+                    'info': tf.gather(self.info_data, item_indices),
+                    'desc': tf.gather(self.desc_data, item_indices),
+                    'image': tf.gather(self.image_data, item_indices)
                 },
                 training=True
             )
