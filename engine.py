@@ -90,9 +90,7 @@ class RecEngine:
               top_k=10,
               verbose=0):
 
-        with tf.device(self.item_model.trainable_weights[0].device):
-            data.prepare_features(self.tokenizer)
-
+        data.prepare_features(self.tokenizer)
         infer_wrapper = data.infer_wrapper
         trans_indices = tf.keras.preprocessing.sequence.pad_sequences(
             infer_wrapper.trans_indices, maxlen=self.config.get('max_history_length', 50), value=-1
@@ -104,17 +102,19 @@ class RecEngine:
             data.trans.iloc[trans_indices]['item'], np.int32
         ).reshape([len(profile), -1])
 
+        infer_model = RecInfer(self.user_model,
+                               skip_used_items=skip_used_items,
+                               max_history_length=self.config['max_history_length'],
+                               profile_dim=len(self.config['profile_size']),
+                               context_dim=len(self.config['context_size']),
+                               num_items=len(data.items),
+                               embed_dim=self.config['embed_dim'],
+                               top_k=top_k)
+
         item_vectors = self.item_model.predict(data.item_data,
                                                batch_size=batch_size,
                                                verbose=verbose)
-        item_vectors = tf.identity(item_vectors)
-
-        infer_model = RecInfer(
-            self.user_model,
-            item_vectors,
-            top_k=top_k,
-            skip_used_items=skip_used_items
-        )
+        infer_model.set_item_vectors(item_vectors)
         infer_inputs = {'profile': profile, 'context': context, 'item_indices': item_indices}
         predictions = infer_model.predict(infer_inputs, batch_size=batch_size, verbose=verbose)
 
