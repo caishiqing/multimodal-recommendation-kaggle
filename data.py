@@ -198,7 +198,7 @@ class RecData(object):
         trans_data = dict(list(self.trans.groupby('user')))
         for i in self.users.index:
             trans_indices = trans_data.get(i)
-            trans_indices = trans_indices.to_list() if trans_indices else []
+            trans_indices = trans_indices.index.to_list() if trans_indices is not None else []
             wrapper.append(i, trans_indices)
 
         return wrapper
