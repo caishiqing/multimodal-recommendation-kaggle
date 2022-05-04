@@ -195,9 +195,11 @@ class RecData(object):
     @property
     def infer_wrapper(self):
         wrapper = DataWrapper()
-        for user_idx, df in self.trans.groupby('user'):
-            trans_indices = df.index.to_list()
-            wrapper.append(user_idx, trans_indices)
+        trans_data = dict(self.trans.groupby('user'))
+        for i in self.users.index:
+            trans_indices = trans_data.get(i)
+            trans_indices = trans_indice.to_list() if trans_indices else []
+            wrapper.append(i, trans_indices)
 
         return wrapper
 
