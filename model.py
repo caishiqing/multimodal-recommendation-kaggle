@@ -235,9 +235,9 @@ class RecModel(tf.keras.Model):
             pad_mask = tf.not_equal(item_indices, -1)
             item_vectors = self.item_model(
                 {
-                    'info': tf.gather(self.info_data, item_indices),
-                    'desc': tf.gather(self.desc_data, item_indices),
-                    'image': tf.gather(self.image_data, item_indices)
+                    'info': tf.gather(self.item_data['info'], item_indices),
+                    'desc': tf.gather(self.item_data['desc'], item_indices),
+                    'image': tf.gather(self.item_data['image'], item_indices)
                 },
                 training=True
             )
