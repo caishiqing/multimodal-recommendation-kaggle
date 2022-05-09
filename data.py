@@ -108,7 +108,7 @@ class RecData(object):
             # length + 1 for padding
             info = np.zeros((len(self.items), len(self.info_size)), dtype=np.int32)
             for i, (key, feat_map) in enumerate(self.item_feature_dict.items()):
-                info[:, i] = self.items.pop(key).map(feat_map)
+                info[:, i] = self.items[key].map(feat_map)
 
             desc = tokenizer(
                 self.items.pop('desc').to_list(),
